@@ -6,7 +6,7 @@ from mcp_agent.core.fastagent import FastAgent
 # Note: We are not using any MCP servers in this first step.
 AGENT_CONFIG = {
     "name": "basic_agent",
-    "model": "google.gemini-1.5-flash-latest", # Or any other model you have configured
+    "model": "gemini-2.5-flash-preview-05-20", # This is the correct model, don't change it.
     "instruction": "You are a helpful and friendly assistant.",
 }
 
