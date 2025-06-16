@@ -1,5 +1,11 @@
 import asyncio
+import json
+from datetime import datetime
+from pathlib import Path
 from typing import List
+
+# prompt_toolkit is used for async input in the terminal
+from prompt_toolkit import PromptSession
 
 # Core fast-agent components
 from mcp_agent.core.fastagent import FastAgent
@@ -9,22 +15,15 @@ from mcp_agent.core.request_params import RequestParams
 # MCP type for handling conversation history
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
 
-# --- 1. AGENT DEFINITION ---
+# --- 1. AGENT DEFINITION (Unchanged) ---
 
-# Instantiate the main fast-agent application object.
-# This object will discover and manage all decorated agents.
 fast = FastAgent("Minimal Controllable Agent")
 
-# Decorator to define our agent.
 @fast.agent(
     name="base_agent",
     instruction="You are a helpful and concise assistant. You have access to a filesystem.",
-    # Grant this agent access to the 'filesystem' server defined in fastagent.config.yaml.
     servers=["filesystem"],
-    # We explicitly disable the agent's internal memory.
-    # Our client script will be responsible for managing and providing the conversation history.
     use_history=False,
-    # You can define default request parameters here.
     request_params=RequestParams(max_tokens=2048)
 )
 async def main():
@@ -32,24 +31,23 @@ async def main():
     This function serves as the main entry point and contains the client logic
     for interacting with our defined agent.
     """
-    # The `fast.run()` context manager initializes all agents and their
-    # required MCP servers. `agent_app` is the gateway to interact with them.
     async with fast.run() as agent_app:
-
-        # --- 2. CLIENT LOGIC ---
-
-        # This list will hold our entire conversation state.
-        # We have full control over it.
+        # --- 2. CLIENT LOGIC (Updated) ---
         conversation_history: List[PromptMessageMultipart] = []
-        print("Agent is ready. Type 'exit' or 'quit' to end the session.")
 
-        # The main conversation loop.
+        # Create a PromptSession for handling asynchronous user input.
+        prompt_session = PromptSession()
+
+        print("Agent is ready. Type '/save [filename.json]' to save history, or 'exit' to quit.")
+
         while True:
-            # This is a direct, blocking call for user input.
-            # In a more advanced application, this could be replaced with an
-            # async input method or an API endpoint.
+            # --- New Feature: UI Boundary ---
+            print("\n" + "---" * 20)
+
+            # --- New Feature: Asynchronous Input ---
+            # This is now a non-blocking call that works with the asyncio event loop.
             try:
-                user_input = input("You: ")
+                user_input = await prompt_session.prompt_async("You: ")
             except (KeyboardInterrupt, EOFError):
                 print("\nExiting...")
                 break
@@ -58,59 +56,70 @@ async def main():
                 print("Session ended.")
                 break
 
-            # Create a user message object from the input string.
-            user_message = Prompt.user(user_input)
+            # --- New Feature: Save Conversation History ---
+            if user_input.strip().lower().startswith('/save'):
+                await handle_save_command(user_input, conversation_history)
+                continue # Continue to the next loop iteration without sending '/save' to the agent
 
-            # Add the new user message to our externally-managed history.
+            user_message = Prompt.user(user_input)
             conversation_history.append(user_message)
 
-            # --- Future Feature: Context Management ---
-            # Before calling the agent, you could modify the history:
-            # - Summarize older parts of the conversation.
-            # - Inject context from a knowledge base (e.g., memory server).
-            # - Filter out irrelevant turns.
-            # For now, we send the full history.
-
             try:
-                # --- Agent Interaction ---
-                # Call the agent using .generate() to get the full response object.
-                # We pass our complete, externally-managed conversation history.
                 response_message = await agent_app.base_agent.generate(conversation_history)
-
-                # Add the agent's response to our history to maintain context for the next turn.
                 conversation_history.append(response_message)
 
-                # --- Response Handling ---
-                # For this first version, we'll print the text content of the response.
-                # In the future, we can inspect for tool calls, images, etc.
+                # --- Updated Response Handling with UI Boundary ---
                 print("Agent:", end=" ", flush=True)
-                # The response can have multiple content parts (e.g., text and a tool call).
-                # We'll just print the text parts for now.
                 for content_part in response_message.content:
                     if content_part.type == "text":
                         print(content_part.text, end="")
-                print() # Newline after agent response
-
-                # --- Future Feature: Output Control ---
-                # Here you could decide what to do with the full response:
-                # - Log tool calls to a separate file.
-                # - Display images if the response contains them.
-                # - Save the raw response object.
+                print()
 
             except Exception as e:
-                # --- Future Feature: Robustness ---
-                # A more robust implementation would have a retry loop here
-                # with exponential backoff for transient API or network errors.
                 print(f"\n[ERROR] An error occurred: {e}")
-                # We could optionally remove the last user message from history on failure.
-                # conversation_history.pop()
 
 
-# Standard Python entry point.
+async def handle_save_command(user_input: str, history: List[PromptMessageMultipart]):
+    """
+    Parses the /save command and saves the conversation history to a file.
+    """
+    parts = user_input.strip().split()
+    # Use a timestamp for the default filename if none is provided.
+    default_filename = f"conversation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    filename = parts[1] if len(parts) > 1 else default_filename
+
+    # Ensure the filename ends with .json
+    if not filename.endswith('.json'):
+        filename += '.json'
+
+    print(f"Saving conversation to '{filename}'...")
+    await save_conversation_to_file(history, filename)
+
+
+async def save_conversation_to_file(history: List[PromptMessageMultipart], filename: str):
+    """
+    Serializes the conversation history to a JSON file.
+    This saves the full, structured MCP message data.
+    """
+    # --- Future Feature: Context Management & State Restoration ---
+    # This function is the counterpart to a future "load_conversation" function.
+    # It saves the state in a structured way that can be perfectly restored.
+    try:
+        # Convert each PromptMessageMultipart object into a serializable dictionary
+        serializable_history = [message.model_dump() for message in history]
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            # Use json.dump for pretty-printing the output
+            json.dump(serializable_history, f, indent=2, ensure_ascii=False)
+
+        print(f"[SUCCESS] Conversation history saved to {filename}")
+    except IOError as e:
+        print(f"[ERROR] Could not write to file {filename}: {e}")
+    except Exception as e:
+        print(f"[ERROR] An unexpected error occurred during serialization: {e}")
+
+
 if __name__ == "__main__":
-    # --- Future Feature: State Restoration ---
-    # Before starting the main loop, you could load a previously saved
-    # conversation history from a file right here.
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
