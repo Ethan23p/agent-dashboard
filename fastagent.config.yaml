@@ -1,0 +1,35 @@
+# fastagent.config.yaml
+
+# --- Model Configuration ---
+# Set the default model for all agents.
+# You can override this per-agent in the decorator or with the --model CLI flag.
+# Format: <provider>.<model_name> (e.g., openai.gpt-4o, anthropic.claude-3-5-sonnet-latest)
+# Aliases like 'sonnet' or 'haiku' are also supported.
+default_model: google.gemini-2.5-flash-preview-05-20
+
+# --- Logger Configuration ---
+# This setup gives your client script full control over what is displayed.
+logger:
+  # Hide the default progress bar for a cleaner terminal experience.
+  progress_display: false
+  # We will print messages from our client script, so disable the default chat log.
+  show_chat: false
+  # We will handle tool display in our client script, so disable this too.
+  show_tools: false
+
+# --- MCP Server Configuration ---
+# Defines the external tools and services available to your agents.
+mcp:
+  servers:
+    # Filesystem server for reading/writing local files.
+    filesystem:
+      # The command to run the server. 'npx' is a good cross-platform choice.
+      command: "npx"
+      # Arguments for the command.
+      args:
+        - "-y" # Automatically say yes to npx prompts
+        - "@modelcontextprotocol/server-filesystem"
+        # IMPORTANT: Replace this with the ABSOLUTE path to the directory
+        # you want the agent to have access to. Using absolute paths is crucial
+        # for reliability.
+        - "H:\\Hume General\\Programming\\Repos\\agent-dashboard"
