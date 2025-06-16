@@ -33,3 +33,4 @@ mcp:
         # you want the agent to have access to. Using absolute paths is crucial
         # for reliability.
         - "H:\\Hume General\\Programming\\Repos\\agent-dashboard"
+        - "H:\\Hume General\\AI Resources"
