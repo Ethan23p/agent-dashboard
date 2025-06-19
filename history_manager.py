@@ -29,7 +29,7 @@ async def save_conversation_to_file(history: List[PromptMessageMultipart], filen
         serializable_history = [message.model_dump() for message in history]
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(serializable_history, f, indent=2, ensure_ascii=False)
-        print(f"[SUCCESS] Conversation history saved to {filename}")
+        #print(f"[SUCCESS] Conversation history saved to {filename}")
     except IOError as e:
         print(f"[ERROR] Could not write to file {filename}: {e}")
     except Exception as e:

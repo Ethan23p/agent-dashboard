@@ -4,7 +4,7 @@
     "content": [
       {
         "type": "text",
-        "text": "Who has if had told to the with from?",
+        "text": "marco",
         "annotations": null
       }
     ]
@@ -14,27 +14,7 @@
     "content": [
       {
         "type": "text",
-        "text": "I'm sorry, I don't understand your request. It seems to be a jumble of words that don't form a coherent question or command. Could you please rephrase it?",
-        "annotations": null
-      }
-    ]
-  },
-  {
-    "role": "user",
-    "content": [
-      {
-        "type": "text",
-        "text": "For real?",
-        "annotations": null
-      }
-    ]
-  },
-  {
-    "role": "assistant",
-    "content": [
-      {
-        "type": "text",
-        "text": "Yes, for real. I am a language model and can only process coherent language. The phrase \"Who has if had told to the with from?\" does not form a grammatically correct or semantically meaningful sentence in English, which is why I'm unable to understand it.\n\nIf you have a question or a task for me, please phrase it clearly so I can assist you.",
+        "text": "polo",
         "annotations": null
       }
     ]

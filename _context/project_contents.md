@@ -34,12 +34,9 @@ wheels/
 from mcp_agent.core.fastagent import FastAgent
 from mcp_agent.core.request_params import RequestParams
 
-# --- AGENT DEFINITION ---
-# This file now only defines the agent and its capabilities.
-# The client logic that runs it is in cli.py.
-
 # Instantiate the main fast-agent application object.
 fast = FastAgent("Minimal Controllable Agent")
+
 
 # Decorator to define our agent.
 @fast.agent(
@@ -47,7 +44,7 @@ fast = FastAgent("Minimal Controllable Agent")
     instruction="You are a helpful and concise assistant. You have access to a filesystem.",
     servers=["filesystem"],
     use_history=False,
-    request_params=RequestParams(max_tokens=2048)
+    request_params=RequestParams(max_tokens=2048),
 )
 async def define_agents():
     """
@@ -55,8 +52,8 @@ async def define_agents():
     The `fast.run()` context manager in cli.py will discover any agents
     defined in this file.
     """
-    # We don't need any logic here anymore.
     pass
+
 ```
 
 --- END OF FILE agent.py ---
@@ -70,12 +67,14 @@ from typing import List
 
 from prompt_toolkit import PromptSession
 
-# Import our modularized components
-from agent import fast  # Import the fast_agent instance from our agent definition file
-from history_manager import handle_save_command
+from agent import fast
+from history_manager import save_conversation_to_file
 
 from mcp_agent.core.prompt import Prompt
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
+
+ENABLE_AUTO_SAVE = True
+AUTO_SAVE_FILENAME = "_context/autosave_history.json"
 
 
 async def main():
@@ -86,14 +85,18 @@ async def main():
         conversation_history: List[PromptMessageMultipart] = []
         prompt_session = PromptSession()
 
-        print("Agent is ready. Type '/save [filename.json]' to save history, or '/exit' to quit.")
+        print(
+            "Agent is ready. Type '/save [filename]' to save history, or '/exit' to quit."
+        )
+        if ENABLE_AUTO_SAVE:
+            print(
+                f"Auto-saving is ON. History will be saved to '{AUTO_SAVE_FILENAME}' after each turn."
+            )
 
         while True:
-            # --- NEW: Enhanced UI Formatting ---
             print("\n" + "---" * 20 + "\n")
             print("You:")
             try:
-                # The prompt is now just an empty string for a clean input line.
                 user_input = await prompt_session.prompt_async("")
             except (KeyboardInterrupt, EOFError):
                 print("\nExiting...")
@@ -103,7 +106,9 @@ async def main():
                 print("Session ended.")
                 break
 
-            if user_input.strip().lower().startswith('/save'):
+            if user_input.strip().lower().startswith("/save"):
+                from history_manager import handle_save_command
+
                 await handle_save_command(user_input, conversation_history)
                 continue
 
@@ -111,19 +116,31 @@ async def main():
             conversation_history.append(user_message)
 
             try:
-                response_message = await agent_app.base_agent.generate(conversation_history)
+                response_message = await agent_app.base_agent.generate(
+                    conversation_history
+                )
                 conversation_history.append(response_message)
 
-                # --- NEW: Enhanced UI Formatting for Agent Response ---
+                final_text = response_message.last_text()
+
                 print("\nAgent:")
-                for content_part in response_message.content:
-                    if content_part.type == "text":
-                        # Indent the agent's response for clarity.
-                        indented_text = "\n".join(["    " + line for line in content_part.text.splitlines()])
-                        print(indented_text)
+                if final_text:
+                    indented_text = "\n".join(
+                        ["    " + line for line in final_text.splitlines()]
+                    )
+                    print(indented_text)
+
+                if ENABLE_AUTO_SAVE:
+                    await save_conversation_to_file(
+                        conversation_history, AUTO_SAVE_FILENAME
+                    )
 
             except Exception as e:
                 print(f"\n[ERROR] An error occurred: {e}")
+
+    # A small delay to prevent shutdown race conditions.
+    # This should be removed/resolved gracefully if/when we transition to a frontend UI.
+    await asyncio.sleep(0.1)
 
 
 if __name__ == "__main__":
@@ -131,15 +148,7 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nClient interrupted.")
-    finally:
-        # --- NEW: Graceful Shutdown Pause ---
-        # This pause helps prevent the "I/O operation on closed pipe" error on Windows
-        # by giving background MCP server processes a moment to terminate cleanly.
-        # This can be removed if a more sophisticated shutdown signal is implemented later.
-        print("Shutting down...")
-        # Note: time.sleep() is blocking and should not be used in async code.
-        # We use asyncio.sleep() instead.
-        asyncio.run(asyncio.sleep(0.5))
+
 ```
 
 --- END OF FILE cli.py ---
@@ -221,7 +230,7 @@ async def save_conversation_to_file(history: List[PromptMessageMultipart], filen
         serializable_history = [message.model_dump() for message in history]
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(serializable_history, f, indent=2, ensure_ascii=False)
-        print(f"[SUCCESS] Conversation history saved to {filename}")
+        #print(f"[SUCCESS] Conversation history saved to {filename}")
     except IOError as e:
         print(f"[ERROR] Could not write to file {filename}: {e}")
     except Exception as e:
