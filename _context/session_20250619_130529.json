@@ -1,0 +1,47 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Hey, what files do you have access to?",
+        "annotations": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Allowed directories:\nH:\\Hume General\\Programming\\Repos\\agent-dashboard\nH:\\Hume General\\AI Resources",
+        "annotations": null
+      },
+      {
+        "type": "text",
+        "text": "I have access to files within the following directories:\nH:\\Hume General\\Programming\\Repos\\agent-dashboard\nH:\\Hume General\\AI Resources",
+        "annotations": null
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "exit",
+        "annotations": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Goodbye!",
+        "annotations": null
+      }
+    ]
+  }
+]

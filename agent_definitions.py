@@ -1,12 +1,12 @@
-# agent.py
+# agent_definitions.py
 from mcp_agent.core.fastagent import FastAgent
 from mcp_agent.core.request_params import RequestParams
 
-# Instantiate the main fast-agent application object.
+# This module's sole purpose is to define the agents for the application.
+# It acts as a catalog that can be imported by any client or runner.
+
 fast = FastAgent("Minimal Controllable Agent")
 
-
-# Decorator to define our agent.
 @fast.agent(
     name="base_agent",
     instruction="You are a helpful and concise assistant. You have access to a filesystem.",
@@ -16,8 +16,8 @@ fast = FastAgent("Minimal Controllable Agent")
 )
 async def define_agents():
     """
-    This function is now just a placeholder for the decorator.
-    The `fast.run()` context manager in cli.py will discover any agents
+    This function is a placeholder for the decorator. The `fast.run()`
+    context manager will discover any agents defined in this file.
     defined in this file.
     """
     pass
