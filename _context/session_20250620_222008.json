@@ -1,0 +1,52 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Hey there, what files do you have access to?",
+        "annotations": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Allowed directories:\nG:\\My Drive\\AI Resources\\Open collection",
+        "annotations": null
+      },
+      {
+        "type": "text",
+        "text": "I have access to the `G:\\My Drive\\AI Resources\\Open collection` directory. Would you like me to list its contents?",
+        "annotations": null
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Sure",
+        "annotations": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "[DIR] servers-2025.4.24\n[FILE] model-context-protocol-mcp-docs-llms.txt\n[FILE] fast-agent-docs-llms.txt\n[DIR] Depreciating",
+        "annotations": null
+      },
+      {
+        "type": "text",
+        "text": "I have listed the contents of the `G:\\My Drive\\AI Resources\\Open collection` directory for you. It contains:\n- `servers-2025.4.24` (directory)\n- `model-context-protocol-mcp-docs-llms.txt` (file)\n- `fast-agent-docs-llms.txt` (file)\n- `Depreciating` (directory)\n\nIs there anything else I can help you with regarding these files or directories?",
+        "annotations": null
+      }
+    ]
+  }
+]

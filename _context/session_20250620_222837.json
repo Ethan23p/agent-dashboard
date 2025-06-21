@@ -1,0 +1,37 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Hey, what files do you have access to?",
+        "annotations": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Allowed directories:\nG:\\My Drive\\AI Resources\\Open collection",
+        "annotations": null
+      },
+      {
+        "type": "text",
+        "text": "[DIR] servers-2025.4.24\n[FILE] model-context-protocol-mcp-docs-llms.txt\n[FILE] fast-agent-docs-llms.txt\n[DIR] Depreciating",
+        "annotations": null
+      },
+      {
+        "type": "text",
+        "text": "[FILE] CODE_OF_CONDUCT.md\n[FILE] .gitignore\n[DIR] src\n[FILE] .gitattributes\n[FILE] README.md\n[FILE] package.json\n[FILE] CONTRIBUTING.md\n[FILE] SECURITY.md\n[FILE] tsconfig.json\n[DIR] scripts\n[FILE] package-lock.json\n[FILE] .npmrc\n[FILE] LICENSE\n[DIR] .github",
+        "annotations": null
+      },
+      {
+        "type": "text",
+        "text": "I have access to the following directories and their contents:\n\n- G:\\My Drive\\AI Resources\\Open collection\n    - servers-2025.4.24 (directory)\n        - CODE_OF_CONDUCT.md (file)\n        - .gitignore (file)\n        - src (directory)\n        - .gitattributes (file)\n        - README.md (file)\n        - package.json (file)\n        - CONTRIBUTING.md (file)\n        - SECURITY.md (file)\n        - tsconfig.json (file)\n        - scripts (directory)\n        - package-lock.json (file)\n        - .npmrc (file)\n        - LICENSE (file)\n        - .github (directory)\n    - model-context-protocol-mcp-docs-llms.txt (file)\n    - fast-agent-docs-llms.txt (file)\n    - Depreciating (directory)\n\nI can continue to list the contents of the `src`, `scripts`, `.github`, and `Depreciating` directories if you'd like.",
+        "annotations": null
+      }
+    ]
+  }
+]

@@ -1,12 +1,14 @@
 [project]
 name = "agent-dashboard"
 version = "0.1.0"
-description = "Add your description here"
+description = "A terminal-based agent dashboard for MCP agents"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "anthropic>=0.53.0",
-    "mcp>=1.9.3",
+    "mcp[cli]>=1.9.3",
     "python-dotenv>=1.1.0",
     "rich>=14.0.0",
+    "prompt_toolkit>=3.0.0",
+    "fast-agent-mcp",
 ]

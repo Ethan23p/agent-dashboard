@@ -5,7 +5,7 @@
 # You can override this per-agent in the decorator or with the --model CLI flag.
 # Format: <provider>.<model_name> (e.g., openai.gpt-4o, anthropic.claude-3-5-sonnet-latest)
 # Aliases like 'sonnet' or 'haiku' are also supported.
-default_model: google.gemini-2.5-flash-preview-05-20
+default_model: google.gemini-2.5-flash
 
 # --- Logger Configuration ---
 # This setup gives your client script full control over what is displayed.
@@ -32,5 +32,6 @@ mcp:
         # IMPORTANT: Replace this with the ABSOLUTE path to the directory
         # you want the agent to have access to. Using absolute paths is crucial
         # for reliability.
-        - "H:\\Hume General\\Programming\\Repos\\agent-dashboard"
-        - "H:\\Hume General\\AI Resources"
+        #- "H:\\Hume General\\Programming\\Repos\\agent-dashboard"
+        #- "H:\\Hume General\\AI Resources"
+        - "G:\\My Drive\\AI Resources\\Open collection"
