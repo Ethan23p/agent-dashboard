@@ -5,7 +5,9 @@ import os
 from datetime import datetime
 from typing import List
 
-from agent_definitions import fast  # Import the fast_agent instance
+# --- Module Imports ---
+# We import our custom modules first, following best practices.
+from agent_definitions import fast  # The `FastAgent` instance and its agent definitions.
 from ui_manager import (
     get_user_input_async,
     print_agent_response,
@@ -15,11 +17,12 @@ from ui_manager import (
     print_user_prompt_indicator,
 )
 
+# Core types from the fast-agent framework.
 from mcp_agent.core.prompt import Prompt
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
 
 # --- Application Configuration ---
-# This is now the central, developer-facing config area.
+# This section centralizes developer-facing settings for easy tweaking.
 ENABLE_AUTO_SAVE = True
 CONTEXT_DIR = "_context"
 
@@ -27,9 +30,7 @@ CONTEXT_DIR = "_context"
 
 class ChatSession:
     """
-    Manages the state and logic for a single conversation.
-    This class embodies the "Tell, Don't Ask" principle by encapsulating
-    its own history and behavior.
+    Manages the state and logic for a single, self-contained conversation.
     """
     def __init__(self, agent, session_id: str):
         self.agent = agent
@@ -39,33 +40,43 @@ class ChatSession:
 
     async def process_user_turn(self, user_input: str) -> str:
         """
-        Tells the session to process one full turn of conversation.
-        Returns the final text from the agent.
+        Tells the session to process one full turn of conversation. This includes
+        updating its history and interacting with its assigned agent.
+
+        Args:
+            user_input: The text input from the user.
+
+        Returns:
+            The final text response from the agent.
         """
         user_message = Prompt.user(user_input)
         self.history.append(user_message)
 
         try:
+            # The agent is given the entire history, allowing it to understand
+            # the full context of the conversation for this turn.
             response_message = await self.agent.generate(self.history)
             self.history.append(response_message)
             return response_message.last_text()
         except Exception as e:
             print_message(f"An error occurred: {e}", style="error")
-            # Remove the failed user message to prevent it from poisoning the history.
+            # To maintain a clean state, we remove the user's last message if
+            # the agent failed to generate a response.
             self.history.pop()
             return "I encountered an error. Please try again."
 
     async def save_history(self, filename: str = None):
-        """Tells the session to save its current history to a file."""
-        # If no filename is provided, use the default auto-save filename.
+        """
+        Tells the session to save its current history to a file. This method
+        encapsulates the logic for serialization and file I/O.
+        """
         target_filename = filename or self.auto_save_filename
-
-        # Ensure the context directory exists.
-        import os
         os.makedirs(CONTEXT_DIR, exist_ok=True)
 
         print_message(f"Saving conversation to '{target_filename}'...")
         try:
+            # `model_dump()` serializes the rich MCP message objects into a
+            # standard dictionary format, suitable for JSON.
             serializable_history = [message.model_dump() for message in self.history]
             with open(target_filename, 'w', encoding='utf-8') as f:
                 json.dump(serializable_history, f, indent=2, ensure_ascii=False)
@@ -75,12 +86,11 @@ class ChatSession:
 
 
 async def main():
-    """The main client application loop."""
+    """The main client application loop and entry point."""
+    # `fast.run()` is a context manager that handles the startup and
+    # shutdown of all configured MCP servers.
     async with fast.run() as agent_app:
-        # Create a unique ID for this chat session.
         session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-        # Instantiate our ChatSession, telling it which agent to use.
         session = ChatSession(agent=agent_app.base_agent, session_id=session_id)
 
         print_startup_message(ENABLE_AUTO_SAVE, session.auto_save_filename)
@@ -89,6 +99,7 @@ async def main():
             print_user_prompt_indicator()
             user_input = await get_user_input_async()
 
+            # Command handling is checked before regular processing.
             if user_input.strip().lower().startswith(('/exit', '/quit')):
                 break
 
@@ -96,16 +107,15 @@ async def main():
                 parts = user_input.strip().split()
                 manual_filename = parts[1] if len(parts) > 1 else None
                 await session.save_history(filename=manual_filename)
-                continue
+                continue # Skip the rest of the loop for commands.
 
-            # Tell the session to process the turn and get the final text.
+            # Tell the session to handle the core logic for the turn.
             agent_text = await session.process_user_turn(user_input)
 
-            # Tell the UI manager to display the response.
+            # Tell the UI manager to display the result.
             if agent_text:
                 print_agent_response(agent_text)
 
-            # Tell the session to auto-save itself if enabled.
             if ENABLE_AUTO_SAVE:
                 await session.save_history()
 
@@ -118,4 +128,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print_shutdown_message() # Use UI manager for consistent shutdown message
+        print_shutdown_message() # Use UI manager for a consistent exit message.

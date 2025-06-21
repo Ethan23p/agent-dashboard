@@ -68,7 +68,9 @@ import os
 from datetime import datetime
 from typing import List
 
-from agent_definitions import fast  # Import the fast_agent instance
+# --- Module Imports ---
+# We import our custom modules first, following best practices.
+from agent_definitions import fast  # The `FastAgent` instance and its agent definitions.
 from ui_manager import (
     get_user_input_async,
     print_agent_response,
@@ -78,11 +80,12 @@ from ui_manager import (
     print_user_prompt_indicator,
 )
 
+# Core types from the fast-agent framework.
 from mcp_agent.core.prompt import Prompt
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
 
 # --- Application Configuration ---
-# This is now the central, developer-facing config area.
+# This section centralizes developer-facing settings for easy tweaking.
 ENABLE_AUTO_SAVE = True
 CONTEXT_DIR = "_context"
 
@@ -90,9 +93,7 @@ CONTEXT_DIR = "_context"
 
 class ChatSession:
     """
-    Manages the state and logic for a single conversation.
-    This class embodies the "Tell, Don't Ask" principle by encapsulating
-    its own history and behavior.
+    Manages the state and logic for a single, self-contained conversation.
     """
     def __init__(self, agent, session_id: str):
         self.agent = agent
@@ -102,33 +103,43 @@ class ChatSession:
 
     async def process_user_turn(self, user_input: str) -> str:
         """
-        Tells the session to process one full turn of conversation.
-        Returns the final text from the agent.
+        Tells the session to process one full turn of conversation. This includes
+        updating its history and interacting with its assigned agent.
+
+        Args:
+            user_input: The text input from the user.
+
+        Returns:
+            The final text response from the agent.
         """
         user_message = Prompt.user(user_input)
         self.history.append(user_message)
 
         try:
+            # The agent is given the entire history, allowing it to understand
+            # the full context of the conversation for this turn.
             response_message = await self.agent.generate(self.history)
             self.history.append(response_message)
             return response_message.last_text()
         except Exception as e:
             print_message(f"An error occurred: {e}", style="error")
-            # Remove the failed user message to prevent it from poisoning the history.
+            # To maintain a clean state, we remove the user's last message if
+            # the agent failed to generate a response.
             self.history.pop()
             return "I encountered an error. Please try again."
 
     async def save_history(self, filename: str = None):
-        """Tells the session to save its current history to a file."""
-        # If no filename is provided, use the default auto-save filename.
+        """
+        Tells the session to save its current history to a file. This method
+        encapsulates the logic for serialization and file I/O.
+        """
         target_filename = filename or self.auto_save_filename
-
-        # Ensure the context directory exists.
-        import os
         os.makedirs(CONTEXT_DIR, exist_ok=True)
 
         print_message(f"Saving conversation to '{target_filename}'...")
         try:
+            # `model_dump()` serializes the rich MCP message objects into a
+            # standard dictionary format, suitable for JSON.
             serializable_history = [message.model_dump() for message in self.history]
             with open(target_filename, 'w', encoding='utf-8') as f:
                 json.dump(serializable_history, f, indent=2, ensure_ascii=False)
@@ -138,12 +149,11 @@ class ChatSession:
 
 
 async def main():
-    """The main client application loop."""
+    """The main client application loop and entry point."""
+    # `fast.run()` is a context manager that handles the startup and
+    # shutdown of all configured MCP servers.
     async with fast.run() as agent_app:
-        # Create a unique ID for this chat session.
         session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-        # Instantiate our ChatSession, telling it which agent to use.
         session = ChatSession(agent=agent_app.base_agent, session_id=session_id)
 
         print_startup_message(ENABLE_AUTO_SAVE, session.auto_save_filename)
@@ -152,6 +162,7 @@ async def main():
             print_user_prompt_indicator()
             user_input = await get_user_input_async()
 
+            # Command handling is checked before regular processing.
             if user_input.strip().lower().startswith(('/exit', '/quit')):
                 break
 
@@ -159,16 +170,15 @@ async def main():
                 parts = user_input.strip().split()
                 manual_filename = parts[1] if len(parts) > 1 else None
                 await session.save_history(filename=manual_filename)
-                continue
+                continue # Skip the rest of the loop for commands.
 
-            # Tell the session to process the turn and get the final text.
+            # Tell the session to handle the core logic for the turn.
             agent_text = await session.process_user_turn(user_input)
 
-            # Tell the UI manager to display the response.
+            # Tell the UI manager to display the result.
             if agent_text:
                 print_agent_response(agent_text)
 
-            # Tell the session to auto-save itself if enabled.
             if ENABLE_AUTO_SAVE:
                 await session.save_history()
 
@@ -181,7 +191,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print_shutdown_message() # Use UI manager for consistent shutdown message
+        print_shutdown_message() # Use UI manager for a consistent exit message.
 ```
 
 --- END OF FILE brain.py ---
@@ -229,55 +239,6 @@ mcp:
 
 --- END OF FILE fastagent.config.yaml ---
 
---- START OF FILE history_manager.py ---
-
-```py
-# history_manager.py
-import json
-from datetime import datetime
-from typing import List
-
-from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
-
-async def handle_save_command(user_input: str, history: List[PromptMessageMultipart]):
-    """
-    Parses the /save command and saves the conversation history to a file.
-    """
-    parts = user_input.strip().split()
-    default_filename = f"conversation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    filename = parts[1] if len(parts) > 1 else default_filename
-
-    if not filename.endswith('.json'):
-        filename += '.json'
-
-    print(f"Saving conversation to '{filename}'...")
-    await save_conversation_to_file(history, filename)
-
-async def save_conversation_to_file(history: List[PromptMessageMultipart], filename: str):
-    """
-    Serializes the conversation history to a JSON file.
-    This saves the full, structured MCP message data, which is ideal for
-    perfect state restoration later.
-    """
-    try:
-        serializable_history = [message.model_dump() for message in history]
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(serializable_history, f, indent=2, ensure_ascii=False)
-        #print(f"[SUCCESS] Conversation history saved to {filename}")
-    except IOError as e:
-        print(f"[ERROR] Could not write to file {filename}: {e}")
-    except Exception as e:
-        print(f"[ERROR] An unexpected error occurred during serialization: {e}")
-
-# --- Future Feature: State Restoration ---
-# async def load_conversation_from_file(filename: str) -> List[PromptMessageMultipart]:
-#     """Loads and deserializes conversation history from a file."""
-#     # This would be the counterpart to the save function.
-#     pass
-```
-
---- END OF FILE history_manager.py ---
-
 --- START OF FILE pyproject.toml ---
 
 ```toml
@@ -304,37 +265,51 @@ dependencies = [
 # ui_manager.py
 from prompt_toolkit import PromptSession
 
-# This module handles all terminal input and output.
-# It defines HOW to display information, abstracting these details from other parts of the application.
+# This module is responsible for the "Presentation Layer" of the application.
+# It handles all direct interaction with the terminal, abstracting the details
+# of input and output away from the core application logic in 'brain.py'.
+# If we were to build a web UI, this file would be replaced, but 'brain.py'
+# and 'agent_definitions.py' could remain largely unchanged.
 
-# A single session object enables command history across multiple inputs within a run.
+# We create a single, module-level session object. This allows `prompt_toolkit`
+# to remember user input history (e.g., using the up/down arrow keys)
+# for the entire duration of the application run.
 _prompt_session = PromptSession()
 
 def print_startup_message(auto_save_enabled: bool, filename: str):
-    """Prints the initial welcome and instructions."""
-    print("Agent is ready. Type '/save [filename.json]' to save history, or '/exit' to quit.")
+    """Prints the initial welcome and instructions to the user."""
+    print("Agent is ready. Type '/save [filename]' to save history, or '/exit' to quit.")
     if auto_save_enabled:
         print(f"Auto-saving is ON. History will be saved to '{filename}' after each turn.")
 
 def print_shutdown_message():
-    """Prints a clean shutdown message."""
-    print("Shutting down...")
+    """Prints a consistent shutdown message."""
+    print("\nClient session ended.")
 
 def print_agent_response(text: str):
-    """Formats and prints the agent's text response.
-    Indentation is used for visual distinction of the agent's output.
+    """
+    Formats and prints the agent's text response.
+    The primary goal here is to visually distinguish the agent's output
+    from the user's input, making the conversation easy to follow.
     """
     print("\nAgent:")
+    # Indenting the response is a simple but effective way to create this distinction.
     indented_text = "\n".join(["    " + line for line in text.splitlines()])
     print(indented_text)
 
 def print_user_prompt_indicator():
-    """Prints the separator and the 'You:' prompt indicator for clarity."""
+    """
+    Prints the separator and the 'You:' prompt indicator. This clearly marks
+    the beginning of the user's turn.
+    """
     print("\n" + "---" * 20 + "\n")
     print("You:")
 
 def print_message(message: str, style: str = "info"):
-    """Prints a formatted message, with optional styling prefixes."""
+    """
+    A general-purpose function for printing formatted system messages,
+    such as status updates or errors.
+    """
     prefix = ""
     if style.lower() == "error":
         prefix = "[ERROR] "
@@ -343,12 +318,20 @@ def print_message(message: str, style: str = "info"):
     print(f"{prefix}{message}")
 
 async def get_user_input_async() -> str:
-    """Asynchronously gets input, returning '/exit' on interrupt for graceful shutdown."""
+    """
+    Asynchronously gets input from the user.
+    Using `prompt_toolkit` instead of the standard `input()` is crucial for
+    an `asyncio` application, as it doesn't block the entire event loop.
+    """
     try:
-        return await _prompt_session.prompt_async("") # Empty prompt for a clean input line
+        # We pass an empty string to `prompt_async` because the "You:" prompt
+        # is handled by `print_user_prompt_indicator` for consistent formatting.
+        return await _prompt_session.prompt_async("")
     except (KeyboardInterrupt, EOFError):
-        return "/exit" # Signals the main loop to exit
-
+        # A user pressing Ctrl+C or Ctrl+D is a signal to exit gracefully.
+        # We return a specific command string that the main loop in 'brain.py'
+        # can check for, rather than letting the exception crash the program.
+        return "/exit"
 ```
 
 --- END OF FILE ui_manager.py ---
