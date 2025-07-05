@@ -4,7 +4,7 @@ import asyncio
 from model import Model
 from view import View
 from controller import Controller, ExitCommand
-from agent_definitions import fast
+from agent_definitions import fast_planner
 
 def print_shutdown_message():
     """Prints a consistent shutdown message."""
@@ -14,20 +14,12 @@ async def main():
     """
     The main entry point for the application.
     """
-    # This context manager handles startup and shutdown of MCP servers.
-    async with fast.run() as agent_app:
-        model = Model()
-        controller = Controller(model, agent_app)
-        view = View(model, controller)
+    # Run the planning workflow
+    async with fast_planner.run() as agent:
+        print("Starting planning workflow...")
+        await agent.prompt("approve_and_execute_workflow")
 
-        try:
-            # The view's main loop now runs until an ExitCommand is raised.
-            await view.run_main_loop()
-        except ExitCommand:
-            # This is our clean exit path.
-            pass
-
-    # This delay happens AFTER fast.run() has closed, giving background
+    # This delay happens AFTER fast_planner.run() has closed, giving background
     # tasks time to finalize their shutdown before the script terminates.
     await asyncio.sleep(0.1)
 
