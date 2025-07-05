@@ -4,7 +4,7 @@ import asyncio
 from model import Model
 from view import View
 from controller import Controller, ExitCommand
-from agent_definitions import fast_planner
+from agent_definitions import minimal_agent
 
 def print_shutdown_message():
     """Prints a consistent shutdown message."""
@@ -14,12 +14,19 @@ async def main():
     """
     The main entry point for the application.
     """
-    # Run the planning workflow
-    async with fast_planner.run() as agent:
-        print("Starting planning workflow...")
-        await agent.prompt("approve_and_execute_workflow")
+    # Run the minimal agent
+    async with minimal_agent.run() as agent_app:
+        print("Starting minimal agent...")
+        
+        # Initialize MVC components
+        model = Model()
+        controller = Controller(model, agent_app)
+        view = View(model, controller)
+        
+        # Run the main loop until exit
+        await view.run_main_loop()
 
-    # This delay happens AFTER fast_planner.run() has closed, giving background
+    # This delay happens AFTER minimal_agent.run() has closed, giving background
     # tasks time to finalize their shutdown before the script terminates.
     await asyncio.sleep(0.1)
 

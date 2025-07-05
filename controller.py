@@ -20,7 +20,7 @@ class Controller:
     def __init__(self, model: Model, agent_app: "AgentApp"):
         self.model = model
         self.agent_app = agent_app
-        self.agent = agent_app.base_agent
+        self.agent = agent_app.agent
 
     async def process_user_input(self, user_input: str):
         """

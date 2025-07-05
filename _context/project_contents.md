@@ -37,98 +37,21 @@ from mcp_agent.core.request_params import RequestParams
 # This module's sole purpose is to define the agents for the application.
 # It acts as a catalog that can be imported by any client or runner.
 
-fast = FastAgent("Minimal Controllable Agent")
+# Simple single agent for basic operations
+minimal_agent = FastAgent("Minimal Agent")
 
-# New FastAgent instance for planning functionality
-fast_planner = FastAgent("Human-Approved Planning Agent")
-
-# --- Original Base Agent ---
-@fast.agent(
-    name="base_agent",
-    instruction="You are a helpful and concise assistant. You have access to a filesystem.",
+@minimal_agent.agent(
+    name="agent",
+    instruction="""
+    You are a helpful assistant that can perform various operations.
+    You can read files, write files, and list directory contents.
+    Always be helpful and provide clear responses to user requests.
+    """,
     servers=["filesystem"],
-    use_history=False,
-)
-async def define_agents():
-    """
-    This function is a placeholder for the decorator. The `fast.run()`
-    context manager will discover any agents defined in this file.
-    """
-    pass
-
-# --- Planning Agent Definitions ---
-
-# 1. The Pre-Processor Agent: Lists tools for the planner.
-@fast_planner.agent(
-    name="tool_lister",
-    instruction="""
-    Based on the tools available to you, generate a concise summary of your capabilities.
-    This summary will be given to a planning agent.
-    Example: 'The executor can write files, read files, and list directories.'
-    """,
-    # This agent sees the same tools as the executor.
-    servers=["filesystem"]
+    request_params=RequestParams(maxTokens=2048)
 )
 
-# 2. The Planner Agent: Now receives the tool list and is explicitly instructed on efficiency.
-@fast_planner.agent(
-    name="planner",
-    instruction="""
-    You are a master planning agent. You will be given a user's goal and a summary of the tools available for execution.
-    When creating the plan, you MUST prioritize efficiency. If a tool exists to perform a bulk action
-    (e.g., read_multiple_files), your plan should use that single tool call instead of multiple individual calls.
-
-    If you are also given feedback on a previous plan, you MUST use it to generate a new, improved plan.
-    Your output must be a step-by-step plan in markdown format.
-    """,
-    # This agent gets the new read-only filesystem server
-    servers=["readonly_fs"],
-    use_history=True
-)
-
-# 3. The Human Feedback Agent: Unchanged, but essential.
-@fast_planner.agent(
-    name="human_feedback_evaluator",
-    instruction="""
-    You have been given a plan to show to a human user.
-    Present the plan and ask for their feedback or approval using the Human Input tool.
-    If the user approves the plan (e.g., says 'yes', 'looks good', 'proceed'), respond with the single word 'EXCELLENT'.
-    If the user provides any suggestions, changes, or critique, your output MUST be their verbatim feedback.
-    """,
-    human_input=True
-)
-
-# 4. The Executor Agent: Unchanged.
-@fast_planner.agent(
-    name="executor",
-    instruction="Execute the given step-by-step plan precisely using your available tools.",
-    servers=["filesystem"] # The full-access server
-)
-
-# 5. The Planning Chain: Now includes the tool_lister pre-processor.
-# We set cumulative=True so the original prompt is passed along with the tool list.
-@fast_planner.chain(
-    name="plan_generation_chain",
-    sequence=["tool_lister", "planner"],
-    cumulative=True
-)
-
-# 6. The Feedback Loop: Now uses the new planning chain as its generator.
-@fast_planner.evaluator_optimizer(
-    name="interactive_planner",
-    generator="plan_generation_chain", # Use the new chain
-    evaluator="human_feedback_evaluator",
-    min_rating="EXCELLENT",
-    max_refinements=5
-)
-
-# 7. The Final Workflow: The main entry point.
-@fast_planner.chain(
-    name="approve_and_execute_workflow",
-    sequence=["interactive_planner", "executor"],
-    instruction="Generates a plan with iterative human feedback, then executes the final approved plan."
-)
-async def approve_and_execute_workflow():
+async def agent():
     """ This function is a placeholder for the decorator. """
     pass
 
@@ -161,7 +84,7 @@ class Controller:
     def __init__(self, model: Model, agent_app: "AgentApp"):
         self.model = model
         self.agent_app = agent_app
-        self.agent = agent_app.base_agent
+        self.agent = agent_app.agent
 
     async def process_user_input(self, user_input: str):
         """
@@ -233,11 +156,6 @@ class Controller:
 # Aliases like 'sonnet' or 'haiku' are also supported.
 default_model: google.gemini-2.5-flash
 
-# --- Request Parameters ---
-# Global request parameters that apply to all agents unless overridden
-request_params:
-  maxTokens: 2048
-
 # --- Logger Configuration ---
 # This setup gives your client script full control over what is displayed.
 logger:
@@ -299,50 +217,33 @@ mcp:
 ```py
 # main.py
 import asyncio
-import sys
 
 from model import Model
 from view import View
 from controller import Controller, ExitCommand
-from agent_definitions import fast, fast_planner
+from agent_definitions import minimal_agent
 
 def print_shutdown_message():
     """Prints a consistent shutdown message."""
     print("\nClient session ended.")
 
-def print_usage():
-    """Prints usage information."""
-    print("Usage:")
-    print("  python main.py                    # Run the original interactive workflow")
-    print("  python main.py --planning         # Run the planning workflow")
-
 async def main():
     """
     The main entry point for the application.
     """
-    # Check command line arguments
-    use_planning = "--planning" in sys.argv
-    
-    if use_planning:
-        # Run the planning workflow
-        async with fast_planner.run() as agent:
-            print("Starting planning workflow...")
-            await agent.prompt("approve_and_execute_workflow")
-    else:
-        # Run the original interactive workflow
-        async with fast.run() as agent_app:
-            model = Model()
-            controller = Controller(model, agent_app)
-            view = View(model, controller)
+    # Run the minimal agent
+    async with minimal_agent.run() as agent_app:
+        print("Starting minimal agent...")
+        
+        # Initialize MVC components
+        model = Model()
+        controller = Controller(model, agent_app)
+        view = View(model, controller)
+        
+        # Run the main loop until exit
+        await view.run_main_loop()
 
-        try:
-            # The view's main loop now runs until an ExitCommand is raised.
-            await view.run_main_loop()
-        except ExitCommand:
-            # This is our clean exit path.
-            pass
-
-    # This delay happens AFTER fast.run() has closed, giving background
+    # This delay happens AFTER minimal_agent.run() has closed, giving background
     # tasks time to finalize their shutdown before the script terminates.
     await asyncio.sleep(0.1)
 

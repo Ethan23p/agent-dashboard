@@ -1,0 +1,22 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "How are you?",
+        "annotations": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "I'm doing well, thank you for asking! I'm ready to assist you with any file system operations you need.\n",
+        "annotations": null
+      }
+    ]
+  }
+]
