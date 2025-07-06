@@ -16,7 +16,8 @@ minimal_agent = FastAgent("Minimal Agent")
     Always be helpful and provide clear responses to user requests.
     """,
     servers=["filesystem"],
-    request_params=RequestParams(maxTokens=2048)
+    request_params=RequestParams(maxTokens=2048),
+    use_history=False  # <-- THIS IS THE KEY CHANGE
 )
 
 async def agent():

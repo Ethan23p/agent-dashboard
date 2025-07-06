@@ -16,6 +16,40 @@ The client is built with a few key ideas in mind:
 
 *   **Resilient Operation.** LLM or MCP server errors are handled by the controller, which rolls back the conversational state to its last valid point. The application also shuts down cleanly to avoid resource errors.
 
+*   **Comprehensive Testing.** The application includes a complete testing suite with unit tests, integration tests, and retry mechanisms to ensure reliability and maintainability.
+
+## Testing
+
+The project includes a comprehensive testing suite to ensure reliability and maintainability:
+
+### Running Tests
+
+```bash
+# Install test dependencies
+pip install pytest pytest-asyncio
+
+# Run all tests
+python run_tests.py
+
+# Run specific test file
+python run_tests.py test_model.py
+
+# Run with verbose output
+python run_tests.py -v
+```
+
+### Test Structure
+
+- **`test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
+- **`test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
+- **`test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
+
+### Test Features
+
+- **Retry Logic**: The controller now includes exponential backoff retry logic for agent calls, making the application more resilient to temporary network or API issues
+- **Mock Testing**: All tests use mocks to avoid external dependencies while thoroughly testing the application logic
+- **Async Support**: Full async/await support for testing the asynchronous nature of the application
+
 ## Project Journey
 
 This client evolved through several stages:

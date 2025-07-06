@@ -35,6 +35,11 @@ class View:
         elif self.model.application_state == AppState.ERROR:
             error_msg = self.model.last_error_message or "An unknown error occurred."
             print(f"\n[ERROR] {error_msg}")
+        elif self.model.application_state == AppState.IDLE and self.model.last_success_message:
+            # Show success messages
+            print(f"\n[SUCCESS] {self.model.last_success_message}")
+            # Clear the message after showing it
+            self.model.last_success_message = None
 
     def _render_new_messages(self):
         """Renders only new messages from the agent."""

@@ -28,6 +28,7 @@ class Model:
         self.conversation_history: List[PromptMessageMultipart] = []
         self.application_state: AppState = AppState.IDLE
         self.last_error_message: Optional[str] = None
+        self.last_success_message: Optional[str] = None
         
         # Corrected initialization sequence:
         # 1. Initialize the dictionary with static keys first.
@@ -81,13 +82,15 @@ class Model:
         self.conversation_history = []
         await self._notify_listeners()
 
-    async def set_state(self, new_state: AppState, error_message: Optional[str] = None):
+    async def set_state(self, new_state: AppState, error_message: Optional[str] = None, success_message: Optional[str] = None):
         """Updates the application's current state and notifies listeners."""
         self.application_state = new_state
         if new_state == AppState.ERROR:
             self.last_error_message = error_message
+            self.last_success_message = None
         else:
             self.last_error_message = None # Clear error on non-error states.
+            self.last_success_message = success_message
         await self._notify_listeners()
 
     async def load_history_from_file(self, filepath: str) -> bool:

@@ -48,7 +48,8 @@ minimal_agent = FastAgent("Minimal Agent")
     Always be helpful and provide clear responses to user requests.
     """,
     servers=["filesystem"],
-    request_params=RequestParams(maxTokens=2048)
+    request_params=RequestParams(maxTokens=2048),
+    use_history=False  # <-- THIS IS THE KEY CHANGE
 )
 
 async def agent():
@@ -84,6 +85,9 @@ class Controller:
     def __init__(self, model: Model, agent_app: "AgentApp"):
         self.model = model
         self.agent_app = agent_app
+        # Get the first (default) agent without knowing its name
+        # For now, we'll use the direct agent access since we only have one agent
+        # This can be enhanced later when we support multiple agents
         self.agent = agent_app.agent
 
     async def process_user_input(self, user_input: str):
@@ -102,21 +106,59 @@ class Controller:
         else:
             await self._handle_agent_prompt(stripped_input)
 
-    async def _handle_command(self, command: str):
+    async def _handle_command(self, command_str: str):
         """Parses and executes client-side commands like /save or /exit."""
-        parts = command.lower().split()
-        command_name = parts[0]
+        parts = command_str.lower().split()
+        command_name = parts[0][1:]  # remove the '/'
+        args = parts[1:]
 
-        if command_name in ('/exit', '/quit'):
-            # Raise our custom exception to signal the main loop to exit.
-            raise ExitCommand()
+        command_map = {
+            'exit': self._cmd_exit,
+            'quit': self._cmd_exit,
+            'save': self._cmd_save,
+            'load': self._cmd_load,
+            'clear': self._cmd_clear,
+        }
 
-        elif command_name == '/save':
-            filename = parts[1] if len(parts) > 1 else None
-            success = await self.model.save_history_to_file(filename)
-            # The view will be notified of the state change by the model.
+        handler = command_map.get(command_name)
+        if handler:
+            await handler(args)
         else:
-            await self.model.set_state(AppState.ERROR, f"Unknown command: {command_name}")
+            await self.model.set_state(AppState.ERROR, error_message=f"Unknown command: /{command_name}")
+
+    async def _cmd_exit(self, args):
+        raise ExitCommand()
+
+    async def _cmd_save(self, args):
+        filename = args[0] if args else None
+        # If filename provided, ensure it's in the context directory
+        if filename and not filename.startswith('/') and not filename.startswith('\\'):
+            context_dir = self.model._get_context_dir()
+            filename = f"{context_dir}/{filename}"
+        success = await self.model.save_history_to_file(filename)
+        if success:
+            await self.model.set_state(AppState.IDLE, success_message="History saved successfully.")
+        else:
+            await self.model.set_state(AppState.ERROR, error_message="Failed to save history.")
+
+    async def _cmd_load(self, args):
+        if not args:
+            await self.model.set_state(AppState.ERROR, error_message="Please provide a filename: /load <filename>")
+            return
+        filename = args[0]
+        # If filename doesn't start with path separator, assume it's in context directory
+        if not filename.startswith('/') and not filename.startswith('\\'):
+            context_dir = self.model._get_context_dir()
+            filename = f"{context_dir}/{filename}"
+        success = await self.model.load_history_from_file(filename)
+        if success:
+            await self.model.set_state(AppState.IDLE, success_message="History loaded successfully.")
+        else:
+            await self.model.set_state(AppState.ERROR, error_message="Failed to load history.")
+
+    async def _cmd_clear(self, args):
+        await self.model.clear_history()
+        await self.model.set_state(AppState.IDLE, success_message="Conversation history cleared.")
 
 
     async def _handle_agent_prompt(self, user_prompt: str):
@@ -133,7 +175,7 @@ class Controller:
             )
             await self.model.add_message(response_message)
         except Exception as e:
-            await self.model.set_state(AppState.ERROR, f"Agent Error: {e}")
+            await self.model.set_state(AppState.ERROR, error_message=f"Agent Error: {e}")
             await self.model.pop_last_message()
         finally:
             if self.model.application_state != AppState.ERROR:
@@ -294,6 +336,7 @@ class Model:
         self.conversation_history: List[PromptMessageMultipart] = []
         self.application_state: AppState = AppState.IDLE
         self.last_error_message: Optional[str] = None
+        self.last_success_message: Optional[str] = None
         
         # Corrected initialization sequence:
         # 1. Initialize the dictionary with static keys first.
@@ -347,13 +390,15 @@ class Model:
         self.conversation_history = []
         await self._notify_listeners()
 
-    async def set_state(self, new_state: AppState, error_message: Optional[str] = None):
+    async def set_state(self, new_state: AppState, error_message: Optional[str] = None, success_message: Optional[str] = None):
         """Updates the application's current state and notifies listeners."""
         self.application_state = new_state
         if new_state == AppState.ERROR:
             self.last_error_message = error_message
+            self.last_success_message = None
         else:
             self.last_error_message = None # Clear error on non-error states.
+            self.last_success_message = success_message
         await self._notify_listeners()
 
     async def load_history_from_file(self, filepath: str) -> bool:
@@ -584,6 +629,11 @@ class View:
         elif self.model.application_state == AppState.ERROR:
             error_msg = self.model.last_error_message or "An unknown error occurred."
             print(f"\n[ERROR] {error_msg}")
+        elif self.model.application_state == AppState.IDLE and self.model.last_success_message:
+            # Show success messages
+            print(f"\n[SUCCESS] {self.model.last_success_message}")
+            # Clear the message after showing it
+            self.model.last_success_message = None
 
     def _render_new_messages(self):
         """Renders only new messages from the agent."""

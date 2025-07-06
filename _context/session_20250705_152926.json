@@ -1,0 +1,22 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Describe the room you're in",
+        "annotations": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "I am a large language model, an AI. I don't have a physical body or a room. I exist as a computer program and data on Google's servers.",
+        "annotations": null
+      }
+    ]
+  }
+]

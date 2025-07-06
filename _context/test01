@@ -1,0 +1,22 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Hey, what can you do with filesystem?",
+        "annotations": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "I can help you manage files and directories. I can:\n\n* **Read files:**\n    * `read_file(path, head, tail)`: Read the entire content of a file, or just the beginning/end.\n    * `read_multiple_files(paths)`: Read multiple files at once.\n* **Write files:**\n    * `write_file(content, path)`: Create a new file or overwrite an existing one.\n    * `edit_file(edits, path, dryRun)`: Make specific line-based edits to a file.\n* **Manage directories:**\n    * `create_directory(path)`: Create a new directory.\n    * `list_directory(path)`: List contents of a directory.\n    * `list_directory_with_sizes(path, sortBy)`: List contents with file sizes.\n    * `directory_tree(path)`: Get a recursive tree view of a directory.\n    * `move_file(destination, source)`: Move or rename files/directories.\n* **Search and get info:**\n    * `search_files(path, pattern, excludePatterns)`: Recursively search for files matching a pattern.\n    * `get_file_info(path)`: Get detailed metadata about a file or directory.\n    * `list_allowed_directories()`: List directories you can access.\n\nWhat would you like to do?\n",
+        "annotations": null
+      }
+    ]
+  }
+]
