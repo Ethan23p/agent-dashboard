@@ -64,6 +64,8 @@ async def agent():
 
 ```py
 # controller.py
+import asyncio
+import random
 from typing import TYPE_CHECKING
 
 from mcp_agent.core.prompt import Prompt
@@ -163,25 +165,40 @@ class Controller:
 
     async def _handle_agent_prompt(self, user_prompt: str):
         """
-        Manages the full lifecycle of a conversational turn with the agent.
+        Manages the full lifecycle of a conversational turn with the agent,
+        now with a retry mechanism.
         """
         await self.model.set_state(AppState.AGENT_IS_THINKING)
         user_message = Prompt.user(user_prompt)
         await self.model.add_message(user_message)
 
-        try:
-            response_message = await self.agent.generate(
-                self.model.conversation_history
-            )
-            await self.model.add_message(response_message)
-        except Exception as e:
-            await self.model.set_state(AppState.ERROR, error_message=f"Agent Error: {e}")
-            await self.model.pop_last_message()
-        finally:
-            if self.model.application_state != AppState.ERROR:
+        max_retries = 3
+        base_delay = 1.0  # seconds
+
+        for attempt in range(max_retries):
+            try:
+                # The core agent call
+                response_message = await self.agent.generate(
+                    self.model.conversation_history
+                )
+                await self.model.add_message(response_message)
+                
+                # If successful, break the loop
                 await self.model.set_state(AppState.IDLE)
-            if self.model.user_preferences.get("auto_save_enabled"):
-                await self.model.save_history_to_file()
+                if self.model.user_preferences.get("auto_save_enabled"):
+                    await self.model.save_history_to_file()
+                return # Exit the method on success
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    delay = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
+                    await self.model.set_state(AppState.ERROR, error_message=f"Agent Error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.2f}s...")
+                    await asyncio.sleep(delay)
+                else:
+                    # Final attempt failed
+                    await self.model.set_state(AppState.ERROR, error_message=f"Agent Error after {max_retries} attempts: {e}")
+                    await self.model.pop_last_message() # Roll back the user message
+                    return # Exit after final failure
 ```
 
 --- END OF FILE controller.py ---
@@ -463,7 +480,21 @@ dependencies = [
     "rich>=14.0.0",
     "prompt_toolkit>=3.0.0",
     "fast-agent-mcp",
+    "multidict>=6.5.1",  # Fix for yanked 6.5.0 version
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 
 ```
 
@@ -489,6 +520,40 @@ The client is built with a few key ideas in mind:
 *   **Stateful History.** While the terminal shows a clean chat log, a comprehensive history is maintained in the background. This history can be saved automatically or manually, providing a useful artifact for debugging or resuming sessions.
 
 *   **Resilient Operation.** LLM or MCP server errors are handled by the controller, which rolls back the conversational state to its last valid point. The application also shuts down cleanly to avoid resource errors.
+
+*   **Comprehensive Testing.** The application includes a complete testing suite with unit tests, integration tests, and retry mechanisms to ensure reliability and maintainability.
+
+## Testing
+
+The project includes a comprehensive testing suite to ensure reliability and maintainability:
+
+### Running Tests
+
+```bash
+# Install test dependencies
+pip install pytest pytest-asyncio
+
+# Run all tests
+python run_tests.py
+
+# Run specific test file
+python run_tests.py test_model.py
+
+# Run with verbose output
+python run_tests.py -v
+```
+
+### Test Structure
+
+- **`test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
+- **`test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
+- **`test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
+
+### Test Features
+
+- **Retry Logic**: The controller now includes exponential backoff retry logic for agent calls, making the application more resilient to temporary network or API issues
+- **Mock Testing**: All tests use mocks to avoid external dependencies while thoroughly testing the application logic
+- **Async Support**: Full async/await support for testing the asynchronous nature of the application
 
 ## Project Journey
 
@@ -588,6 +653,494 @@ def main(allowed_dirs: List[Path] = typer.Argument(..., help="List of directorie
 ```
 
 --- END OF FILE readonly_filesystem_server.py ---
+
+--- START OF FILE run_tests.py ---
+
+```py
+#!/usr/bin/env python3
+"""
+Simple test runner for the agent-dashboard project.
+Usage:
+    python run_tests.py                    # Run all tests
+    python run_tests.py test_model.py     # Run specific test file
+    python run_tests.py -v                # Run with verbose output
+"""
+
+import sys
+import subprocess
+import os
+
+
+def run_tests(test_file=None, verbose=False):
+    """Run pytest with the specified options."""
+    cmd = ["python", "-m", "pytest"]
+    
+    if verbose:
+        cmd.append("-v")
+    
+    if test_file:
+        cmd.append(test_file)
+    else:
+        # Run all test files
+        cmd.extend(["test_model.py", "test_controller.py", "test_integration.py"])
+    
+    try:
+        result = subprocess.run(cmd, check=True)
+        print(f"\n✅ All tests passed!")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ Tests failed with exit code {e.returncode}")
+        return False
+    except FileNotFoundError:
+        print("❌ pytest not found. Please install it with: pip install pytest pytest-asyncio")
+        return False
+
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Run tests for agent-dashboard")
+    parser.add_argument("test_file", nargs="?", help="Specific test file to run")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    
+    args = parser.parse_args()
+    
+    print("🧪 Running tests for agent-dashboard...")
+    success = run_tests(args.test_file, args.verbose)
+    
+    sys.exit(0 if success else 1) 
+```
+
+--- END OF FILE run_tests.py ---
+
+--- START OF FILE test_controller.py ---
+
+```py
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+from controller import Controller, ExitCommand
+from model import Model, AppState
+from mcp_agent.core.prompt import Prompt
+
+
+@pytest.mark.asyncio
+async def test_exit_command():
+    """Test that the exit command raises ExitCommand exception."""
+    mock_model = AsyncMock()
+    mock_agent_app = MagicMock()
+    controller = Controller(mock_model, mock_agent_app)
+
+    with pytest.raises(ExitCommand):
+        await controller.process_user_input("/exit")
+
+    with pytest.raises(ExitCommand):
+        await controller.process_user_input("/quit")
+
+
+@pytest.mark.asyncio
+async def test_save_command():
+    """Test the save command functionality."""
+    mock_model = AsyncMock()
+    mock_agent_app = MagicMock()
+    controller = Controller(mock_model, mock_agent_app)
+
+    # Test save with default filename
+    await controller.process_user_input("/save")
+    mock_model.save_history_to_file.assert_called_once_with(None)
+
+    # Test save with custom filename
+    await controller.process_user_input("/save test_file.json")
+    mock_model.save_history_to_file.assert_called_with("test_file.json")
+
+
+@pytest.mark.asyncio
+async def test_load_command():
+    """Test the load command functionality."""
+    mock_model = AsyncMock()
+    mock_agent_app = MagicMock()
+    controller = Controller(mock_model, mock_agent_app)
+
+    # Test load with filename
+    await controller.process_user_input("/load test_file.json")
+    mock_model.load_history_from_file.assert_called_once_with("test_file.json")
+
+
+@pytest.mark.asyncio
+async def test_clear_command():
+    """Test the clear command functionality."""
+    mock_model = AsyncMock()
+    mock_agent_app = MagicMock()
+    controller = Controller(mock_model, mock_agent_app)
+
+    await controller.process_user_input("/clear")
+    mock_model.clear_history.assert_called_once()
+    mock_model.set_state.assert_called_with(AppState.IDLE, success_message="Conversation history cleared.")
+
+
+@pytest.mark.asyncio
+async def test_unknown_command():
+    """Test handling of unknown commands."""
+    mock_model = AsyncMock()
+    mock_agent_app = MagicMock()
+    controller = Controller(mock_model, mock_agent_app)
+
+    await controller.process_user_input("/unknown")
+    mock_model.set_state.assert_called_with(AppState.ERROR, error_message="Unknown command: /unknown")
+
+
+@pytest.mark.asyncio
+async def test_empty_input():
+    """Test that empty input is handled gracefully."""
+    mock_model = AsyncMock()
+    mock_agent_app = MagicMock()
+    controller = Controller(mock_model, mock_agent_app)
+
+    await controller.process_user_input("")
+    await controller.process_user_input("   ")
+    
+    # Should not call any agent methods
+    mock_agent_app.agent.generate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_successful_agent_prompt():
+    """Test successful agent prompt handling."""
+    mock_model = AsyncMock()
+    mock_model.conversation_history = []
+    mock_model.user_preferences = {"auto_save_enabled": False}
+    
+    mock_agent = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.role = 'assistant'
+    mock_response.content = [{'type': 'text', 'text': 'Mocked response'}]
+    mock_agent.generate.return_value = mock_response
+    
+    mock_agent_app = MagicMock()
+    mock_agent_app.agent = mock_agent
+    
+    controller = Controller(mock_model, mock_agent_app)
+
+    await controller.process_user_input("Hello, agent!")
+
+    # Verify the flow
+    mock_model.set_state.assert_called_with(AppState.AGENT_IS_THINKING)
+    mock_model.add_message.assert_called()
+    mock_agent.generate.assert_called_once()
+    mock_model.set_state.assert_called_with(AppState.IDLE)
+
+
+@pytest.mark.asyncio
+async def test_agent_prompt_with_retry():
+    """Test agent prompt handling with retry logic."""
+    mock_model = AsyncMock()
+    mock_model.conversation_history = []
+    mock_model.user_preferences = {"auto_save_enabled": False}
+    
+    mock_agent = AsyncMock()
+    # First call fails, second call succeeds
+    mock_agent.generate.side_effect = [Exception("Network error"), MagicMock(role='assistant', content=[{'type': 'text', 'text': 'Success'}])]
+    
+    mock_agent_app = MagicMock()
+    mock_agent_app.agent = mock_agent
+    
+    controller = Controller(mock_model, mock_agent_app)
+
+    await controller.process_user_input("Hello, agent!")
+
+    # Should have been called twice (retry)
+    assert mock_agent.generate.call_count == 2
+    # Should have set error state during retry
+    mock_model.set_state.assert_any_call(AppState.ERROR, error_message=pytest.approx("Agent Error (attempt 1/3): Network error. Retrying in", rel=0.1))
+
+
+@pytest.mark.asyncio
+async def test_agent_prompt_final_failure():
+    """Test agent prompt handling when all retries fail."""
+    mock_model = AsyncMock()
+    mock_model.conversation_history = []
+    mock_model.user_preferences = {"auto_save_enabled": False}
+    
+    mock_agent = AsyncMock()
+    # All calls fail
+    mock_agent.generate.side_effect = Exception("Persistent error")
+    
+    mock_agent_app = MagicMock()
+    mock_agent_app.agent = mock_agent
+    
+    controller = Controller(mock_model, mock_agent_app)
+
+    await controller.process_user_input("Hello, agent!")
+
+    # Should have been called 3 times (max retries)
+    assert mock_agent.generate.call_count == 3
+    # Should have rolled back the user message
+    mock_model.pop_last_message.assert_called_once()
+    # Should have set final error state
+    mock_model.set_state.assert_any_call(AppState.ERROR, error_message="Agent Error after 3 attempts: Persistent error") 
+```
+
+--- END OF FILE test_controller.py ---
+
+--- START OF FILE test_integration.py ---
+
+```py
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+from model import Model, AppState
+from controller import Controller
+from mcp_agent.core.prompt import Prompt
+
+
+@pytest.mark.asyncio
+async def test_prompt_handling_integration():
+    """Test the full integration between Model and Controller for prompt handling."""
+    model = Model()
+    
+    # Mock the agent_app and the agent's generate method
+    mock_agent = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.role = 'assistant'
+    mock_response.content = [{'type': 'text', 'text': 'Mocked response'}]
+    mock_agent.generate.return_value = mock_response
+    
+    mock_agent_app = MagicMock()
+    mock_agent_app.agent = mock_agent
+    
+    controller = Controller(model, mock_agent_app)
+
+    await controller.process_user_input("Hello, agent!")
+
+    assert len(model.conversation_history) == 2
+    assert model.conversation_history[0].role == 'user'
+    assert model.conversation_history[1].role == 'assistant'
+    assert model.conversation_history[1].last_text() == 'Mocked response'
+
+
+@pytest.mark.asyncio
+async def test_command_integration():
+    """Test the integration of command handling with the Model."""
+    model = Model()
+    mock_agent_app = MagicMock()
+    controller = Controller(model, mock_agent_app)
+
+    # Test save command integration
+    await controller.process_user_input("/save test_integration.json")
+    assert model.application_state == AppState.IDLE
+    assert model.last_success_message == "History saved successfully."
+
+    # Test clear command integration
+    await controller.process_user_input("/clear")
+    assert len(model.conversation_history) == 0
+    assert model.last_success_message == "Conversation history cleared."
+
+
+@pytest.mark.asyncio
+async def test_error_handling_integration():
+    """Test error handling integration between Model and Controller."""
+    model = Model()
+    
+    # Mock agent that always fails
+    mock_agent = AsyncMock()
+    mock_agent.generate.side_effect = Exception("Test error")
+    
+    mock_agent_app = MagicMock()
+    mock_agent_app.agent = mock_agent
+    
+    controller = Controller(model, mock_agent_app)
+
+    # Add a message first to test rollback
+    await model.add_message(Prompt.user("Previous message"))
+    initial_history_length = len(model.conversation_history)
+
+    await controller.process_user_input("This will fail")
+
+    # Should have rolled back the user message
+    assert len(model.conversation_history) == initial_history_length
+    assert model.application_state == AppState.ERROR
+    assert "Test error" in model.last_error_message
+
+
+@pytest.mark.asyncio
+async def test_state_management_integration():
+    """Test that state management works correctly across the integration."""
+    model = Model()
+    mock_agent_app = MagicMock()
+    controller = Controller(model, mock_agent_app)
+
+    # Test that state changes are properly managed
+    assert model.application_state == AppState.IDLE
+    
+    # Simulate a command that changes state
+    await controller.process_user_input("/clear")
+    assert model.application_state == AppState.IDLE
+    assert model.last_success_message is not None
+
+
+@pytest.mark.asyncio
+async def test_conversation_flow_integration():
+    """Test a complete conversation flow with multiple turns."""
+    model = Model()
+    
+    # Mock agent that returns different responses
+    mock_agent = AsyncMock()
+    responses = [
+        MagicMock(role='assistant', content=[{'type': 'text', 'text': 'First response'}]),
+        MagicMock(role='assistant', content=[{'type': 'text', 'text': 'Second response'}]),
+        MagicMock(role='assistant', content=[{'type': 'text', 'text': 'Third response'}])
+    ]
+    mock_agent.generate.side_effect = responses
+    
+    mock_agent_app = MagicMock()
+    mock_agent_app.agent = mock_agent
+    
+    controller = Controller(model, mock_agent_app)
+
+    # Simulate a conversation
+    await controller.process_user_input("First message")
+    await controller.process_user_input("Second message")
+    await controller.process_user_input("Third message")
+
+    assert len(model.conversation_history) == 6  # 3 user + 3 assistant messages
+    assert model.conversation_history[0].role == 'user'
+    assert model.conversation_history[1].role == 'assistant'
+    assert model.conversation_history[2].role == 'user'
+    assert model.conversation_history[3].role == 'assistant'
+    assert model.conversation_history[4].role == 'user'
+    assert model.conversation_history[5].role == 'assistant' 
+```
+
+--- END OF FILE test_integration.py ---
+
+--- START OF FILE test_model.py ---
+
+```py
+import pytest
+import tempfile
+import os
+from model import Model, AppState
+from mcp_agent.core.prompt import Prompt
+
+
+@pytest.mark.asyncio
+async def test_model_initial_state():
+    """Test that the model starts in the correct initial state."""
+    model = Model()
+    assert model.application_state == AppState.IDLE
+    assert len(model.conversation_history) == 0
+    assert model.last_error_message is None
+    assert model.last_success_message is None
+
+
+@pytest.mark.asyncio
+async def test_model_state_change():
+    """Test that state changes work correctly."""
+    model = Model()
+    assert model.application_state == AppState.IDLE
+    
+    await model.set_state(AppState.ERROR, "Test Error")
+    assert model.application_state == AppState.ERROR
+    assert model.last_error_message == "Test Error"
+    
+    await model.set_state(AppState.IDLE, "Test Success")
+    assert model.application_state == AppState.IDLE
+    assert model.last_success_message == "Test Success"
+
+
+@pytest.mark.asyncio
+async def test_add_message():
+    """Test adding messages to conversation history."""
+    model = Model()
+    user_message = Prompt.user("Hello")
+    assistant_message = Prompt.assistant("Hi there!")
+    
+    await model.add_message(user_message)
+    assert len(model.conversation_history) == 1
+    assert model.conversation_history[0].role == 'user'
+    
+    await model.add_message(assistant_message)
+    assert len(model.conversation_history) == 2
+    assert model.conversation_history[1].role == 'assistant'
+
+
+@pytest.mark.asyncio
+async def test_pop_last_message():
+    """Test removing the last message from conversation history."""
+    model = Model()
+    user_message = Prompt.user("Hello")
+    assistant_message = Prompt.assistant("Hi there!")
+    
+    await model.add_message(user_message)
+    await model.add_message(assistant_message)
+    assert len(model.conversation_history) == 2
+    
+    await model.pop_last_message()
+    assert len(model.conversation_history) == 1
+    assert model.conversation_history[0].role == 'user'
+
+
+@pytest.mark.asyncio
+async def test_clear_history():
+    """Test clearing the conversation history."""
+    model = Model()
+    user_message = Prompt.user("Hello")
+    assistant_message = Prompt.assistant("Hi there!")
+    
+    await model.add_message(user_message)
+    await model.add_message(assistant_message)
+    assert len(model.conversation_history) == 2
+    
+    await model.clear_history()
+    assert len(model.conversation_history) == 0
+
+
+@pytest.mark.asyncio
+async def test_save_and_load_history():
+    """Test saving and loading conversation history."""
+    model = Model()
+    user_message = Prompt.user("Hello")
+    assistant_message = Prompt.assistant("Hi there!")
+    
+    await model.add_message(user_message)
+    await model.add_message(assistant_message)
+    
+    # Test saving
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        temp_filename = f.name
+    
+    try:
+        success = await model.save_history_to_file(temp_filename)
+        assert success is True
+        
+        # Test loading
+        new_model = Model()
+        success = await new_model.load_history_from_file(temp_filename)
+        assert success is True
+        assert len(new_model.conversation_history) == 2
+        assert new_model.conversation_history[0].role == 'user'
+        assert new_model.conversation_history[1].role == 'assistant'
+        
+    finally:
+        if os.path.exists(temp_filename):
+            os.unlink(temp_filename)
+
+
+@pytest.mark.asyncio
+async def test_user_preferences():
+    """Test user preferences functionality."""
+    model = Model()
+    
+    # Test default preferences
+    assert model.user_preferences.get("auto_save_enabled") is True
+    
+    # Test setting preferences
+    model.user_preferences["auto_save_enabled"] = False
+    assert model.user_preferences.get("auto_save_enabled") is False
+    
+    model.user_preferences["test_setting"] = "test_value"
+    assert model.user_preferences.get("test_setting") == "test_value" 
+```
+
+--- END OF FILE test_model.py ---
 
 --- START OF FILE view.py ---
 

@@ -13,6 +13,12 @@ class ExitCommand(Exception):
     """Custom exception to signal a graceful exit from the main loop."""
     pass
 
+class SwitchAgentCommand(Exception):
+    """Custom exception to signal switching to a different agent."""
+    def __init__(self, agent_name: str):
+        self.agent_name = agent_name
+        super().__init__(f"Switch to agent: {agent_name}")
+
 class Controller:
     """
     The Controller contains the application's business logic. It responds
@@ -55,6 +61,8 @@ class Controller:
             'save': self._cmd_save,
             'load': self._cmd_load,
             'clear': self._cmd_clear,
+            'switch': self._cmd_switch,
+            'agents': self._cmd_list_agents,
         }
 
         handler = command_map.get(command_name)
@@ -65,6 +73,36 @@ class Controller:
 
     async def _cmd_exit(self, args):
         raise ExitCommand()
+
+    async def _cmd_switch(self, args):
+        """Switch to a different agent."""
+        if not args:
+            await self.model.set_state(AppState.ERROR, error_message="Please provide an agent name: /switch <agent_name>")
+            return
+        
+        agent_name = args[0]
+        # Import here to avoid circular imports
+        from agent_definitions import list_available_agents
+        available_agents = list_available_agents()
+        
+        if agent_name not in available_agents:
+            await self.model.set_state(
+                AppState.ERROR, 
+                error_message=f"Agent '{agent_name}' not found. Available agents: {', '.join(available_agents)}"
+            )
+            return
+        
+        await self.model.set_state(AppState.IDLE, success_message=f"Switching to {agent_name} agent...")
+        raise SwitchAgentCommand(agent_name)
+
+    async def _cmd_list_agents(self, args):
+        """List available agents."""
+        from agent_definitions import list_available_agents
+        available_agents = list_available_agents()
+        await self.model.set_state(
+            AppState.IDLE, 
+            success_message=f"Available agents: {', '.join(available_agents)}"
+        )
 
     async def _cmd_save(self, args):
         filename = args[0] if args else None
