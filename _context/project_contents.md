@@ -18,15 +18,6 @@ wheels/
 
 --- END OF FILE .gitignore ---
 
---- START OF FILE .python-version ---
-
-```
-3.13
-
-```
-
---- END OF FILE .python-version ---
-
 --- START OF FILE agent_definitions.py ---
 
 ```py
@@ -36,6 +27,9 @@ from mcp_agent.core.request_params import RequestParams
 
 # This module's sole purpose is to define the agents for the application.
 # It acts as a catalog that can be imported by any client or runner.
+#
+# NOTE: All agents should use use_history=False since we manage conversation
+# history ourselves in the Model class and pass it explicitly to the agent.
 
 # Simple single agent for basic operations
 minimal_agent = FastAgent("Minimal Agent")
@@ -47,18 +41,79 @@ minimal_agent = FastAgent("Minimal Agent")
     You can read files, write files, and list directory contents.
     Always be helpful and provide clear responses to user requests.
     """,
-    servers=["filesystem"],
+    servers=["filesystem", "fetch", "sequential-thinking"],
     request_params=RequestParams(maxTokens=2048),
-    use_history=False  # <-- THIS IS THE KEY CHANGE
+    use_history=False 
 )
 
 async def agent():
     """ This function is a placeholder for the decorator. """
     pass
 
+# Example of a second agent with different characteristics
+coding_agent = FastAgent("Coding Assistant")
+
+@coding_agent.agent(
+    name="agent",
+    instruction="""
+    You are a specialized coding assistant. You excel at:
+    - Code review and suggestions
+    - Debugging and problem-solving
+    - Explaining complex technical concepts
+    - Providing code examples and best practices
+    
+    Always provide clear, well-documented code examples when relevant.
+    """,
+    servers=["filesystem"],
+    request_params=RequestParams(maxTokens=4096),
+    use_history=False
+)
+
+async def coding_agent_func():
+    """ This function is a placeholder for the decorator. """
+    pass
+
+# Agent Registry - maps agent names to their FastAgent instances
+AGENT_REGISTRY = {
+    "minimal": minimal_agent,
+    "coding": coding_agent,
+}
+
+def get_agent(agent_name: str = "minimal"):
+    """
+    Get an agent by name from the registry.
+    
+    Args:
+        agent_name: The name of the agent to retrieve
+        
+    Returns:
+        The FastAgent instance for the requested agent
+        
+    Raises:
+        KeyError: If the agent name is not found in the registry
+    """
+    if agent_name not in AGENT_REGISTRY:
+        available_agents = ", ".join(AGENT_REGISTRY.keys())
+        raise KeyError(f"Agent '{agent_name}' not found. Available agents: {available_agents}")
+    
+    return AGENT_REGISTRY[agent_name]
+
+def list_available_agents():
+    """Return a list of available agent names."""
+    return list(AGENT_REGISTRY.keys())
+
 ```
 
 --- END OF FILE agent_definitions.py ---
+
+--- START OF FILE config/.python-version ---
+
+```
+3.13
+
+```
+
+--- END OF FILE config/.python-version ---
 
 --- START OF FILE controller.py ---
 
@@ -77,6 +132,12 @@ if TYPE_CHECKING:
 class ExitCommand(Exception):
     """Custom exception to signal a graceful exit from the main loop."""
     pass
+
+class SwitchAgentCommand(Exception):
+    """Custom exception to signal switching to a different agent."""
+    def __init__(self, agent_name: str):
+        self.agent_name = agent_name
+        super().__init__(f"Switch to agent: {agent_name}")
 
 class Controller:
     """
@@ -120,6 +181,8 @@ class Controller:
             'save': self._cmd_save,
             'load': self._cmd_load,
             'clear': self._cmd_clear,
+            'switch': self._cmd_switch,
+            'agents': self._cmd_list_agents,
         }
 
         handler = command_map.get(command_name)
@@ -130,6 +193,36 @@ class Controller:
 
     async def _cmd_exit(self, args):
         raise ExitCommand()
+
+    async def _cmd_switch(self, args):
+        """Switch to a different agent."""
+        if not args:
+            await self.model.set_state(AppState.ERROR, error_message="Please provide an agent name: /switch <agent_name>")
+            return
+        
+        agent_name = args[0]
+        # Import here to avoid circular imports
+        from agent_definitions import list_available_agents
+        available_agents = list_available_agents()
+        
+        if agent_name not in available_agents:
+            await self.model.set_state(
+                AppState.ERROR, 
+                error_message=f"Agent '{agent_name}' not found. Available agents: {', '.join(available_agents)}"
+            )
+            return
+        
+        await self.model.set_state(AppState.IDLE, success_message=f"Switching to {agent_name} agent...")
+        raise SwitchAgentCommand(agent_name)
+
+    async def _cmd_list_agents(self, args):
+        """List available agents."""
+        from agent_definitions import list_available_agents
+        available_agents = list_available_agents()
+        await self.model.set_state(
+            AppState.IDLE, 
+            success_message=f"Available agents: {', '.join(available_agents)}"
+        )
 
     async def _cmd_save(self, args):
         filename = args[0] if args else None
@@ -202,6 +295,163 @@ class Controller:
 ```
 
 --- END OF FILE controller.py ---
+
+--- START OF FILE docs/AGENT_SELECTION.md ---
+
+```md
+# Agent Selection System
+
+The agent dashboard now supports flexible agent selection with the ability to switch between different agents at runtime.
+
+## Available Agents
+
+- **minimal**: A basic assistant for general operations
+- **coding**: A specialized coding assistant with enhanced programming capabilities
+
+## Usage
+
+### Command Line Selection
+
+Start with a specific agent:
+```bash
+python main.py --agent minimal
+python main.py --agent coding
+```
+
+### Runtime Switching
+
+While using the application, you can switch agents using commands:
+
+- `/agents` - List all available agents
+- `/switch <agent_name>` - Switch to a different agent
+
+Example:
+```
+You: /agents
+[SUCCESS] Available agents: minimal, coding
+
+You: /switch coding
+[SUCCESS] Switching to coding agent...
+```
+
+## Adding New Agents
+
+To add a new agent, edit `agent_definitions.py`:
+
+1. Create a new FastAgent instance:
+```python
+my_agent = FastAgent("My Agent Name")
+```
+
+2. Define the agent with decorator:
+```python
+@my_agent.agent(
+    name="agent",
+    instruction="Your agent instructions here...",
+    servers=["filesystem"],
+    request_params=RequestParams(maxTokens=2048),
+    use_history=False
+)
+async def my_agent_func():
+    pass
+```
+
+3. Add to the registry:
+```python
+AGENT_REGISTRY = {
+    "minimal": minimal_agent,
+    "coding": coding_agent,
+    "my_agent": my_agent,  # Add your new agent here
+}
+```
+
+## Architecture
+
+The agent selection system uses:
+
+- **Agent Registry**: Central registry mapping names to FastAgent instances
+- **Command-line arguments**: Select initial agent
+- **Runtime switching**: Switch agents during session
+- **Exception-based flow control**: Clean agent switching without complex state management
+
+## Testing
+
+Run the test suite to verify agent selection works:
+```bash
+python test_agent_selection.py
+``` 
+```
+
+--- END OF FILE docs/AGENT_SELECTION.md ---
+
+--- START OF FILE docs/README.md ---
+
+```md
+# Agent Dashboard
+
+A terminal client for the `fast-agent` framework.
+
+This project started as a way to have a more stable and transparent interface for agent development. The core is a Model-View-Controller (MVC) architecture, separating the application's state from its terminal UI and logic.
+
+## Technical Details
+
+The client is built with a few key ideas in mind:
+
+*   **Context Management.** Following the philosophy of the Model Context Protocol, the controller assembles the conversational history and other data to form the precise context sent to the agent on each turn. This allows for more deliberate, developer-driven context strategies.
+
+*   **Asynchronous Core.** The application uses `asyncio` and a non-blocking prompt, which keeps the UI responsive. It's designed to support more complex operations, like parallel agent interactions, and could be adapted for a GUI dashboard later.
+
+*   **Stateful History.** While the terminal shows a clean chat log, a comprehensive history is maintained in the background. This history can be saved automatically or manually, providing a useful artifact for debugging or resuming sessions.
+
+*   **Resilient Operation.** LLM or MCP server errors are handled by the controller, which rolls back the conversational state to its last valid point. The application also shuts down cleanly to avoid resource errors.
+
+*   **Comprehensive Testing.** The application includes a complete testing suite with unit tests, integration tests, and retry mechanisms to ensure reliability and maintainability.
+
+## Testing
+
+The project includes a comprehensive testing suite to ensure reliability and maintainability:
+
+### Running Tests
+
+```bash
+# Install test dependencies
+pip install pytest pytest-asyncio
+
+# Run all tests
+python run_tests.py
+
+# Run specific test file
+python run_tests.py test_model.py
+
+# Run with verbose output
+python run_tests.py -v
+```
+
+### Test Structure
+
+- **`test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
+- **`test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
+- **`test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
+
+### Test Features
+
+- **Retry Logic**: The controller now includes exponential backoff retry logic for agent calls, making the application more resilient to temporary network or API issues
+- **Mock Testing**: All tests use mocks to avoid external dependencies while thoroughly testing the application logic
+- **Async Support**: Full async/await support for testing the asynchronous nature of the application
+
+## Project Journey
+
+This client evolved through several stages:
+
+1.  Began with simple `fast-agent` scripts run from the command line.
+2.  Integrated a few powerful MCP servers (`filesystem`, `memory`, `fetch`), which revealed the potential of the protocol.
+3.  Shifted focus from thinking of `fast-agent` as a script runner to using it as a library within a client/server model.
+4.  Adopted the MVC pattern to cleanly separate concerns.
+5.  The result is this application—a stable tool for further agent development.
+
+```
+
+--- END OF FILE docs/README.md ---
 
 --- START OF FILE fastagent.config.yaml ---
 
@@ -276,33 +526,79 @@ mcp:
 ```py
 # main.py
 import asyncio
+import sys
+import argparse
 
 from model import Model
 from view import View
-from controller import Controller, ExitCommand
-from agent_definitions import minimal_agent
+from controller import Controller, ExitCommand, SwitchAgentCommand
+from agent_definitions import get_agent, list_available_agents
 
 def print_shutdown_message():
     """Prints a consistent shutdown message."""
     print("\nClient session ended.")
 
+def parse_arguments():
+    """Parse command line arguments for agent selection."""
+    parser = argparse.ArgumentParser(description="Agent Dashboard")
+    parser.add_argument(
+        "--agent", "-a",
+        type=str,
+        default="minimal",
+        help=f"Select agent to use. Available: {', '.join(list_available_agents())}"
+    )
+    return parser.parse_args()
+
+async def run_agent_session(agent_name: str):
+    """
+    Run a session with a specific agent.
+    
+    Args:
+        agent_name: The name of the agent to run
+        
+    Returns:
+        The new agent name if switching, None if exiting
+    """
+    try:
+        # Get the selected agent from the registry
+        selected_agent = get_agent(agent_name)
+        print(f"Starting {agent_name} agent...")
+        
+        # Run the selected agent
+        async with selected_agent.run() as agent_app:
+            # Initialize MVC components
+            model = Model()
+            controller = Controller(model, agent_app)
+            view = View(model, controller)
+            
+            # Run the main loop until exit or switch
+            await view.run_main_loop()
+            return None  # Normal exit
+            
+    except SwitchAgentCommand as e:
+        return e.agent_name  # Switch to new agent
+    except KeyError as e:
+        print(f"Error: {e}")
+        print(f"Available agents: {', '.join(list_available_agents())}")
+        return None
+
 async def main():
     """
     The main entry point for the application.
     """
-    # Run the minimal agent
-    async with minimal_agent.run() as agent_app:
-        print("Starting minimal agent...")
-        
-        # Initialize MVC components
-        model = Model()
-        controller = Controller(model, agent_app)
-        view = View(model, controller)
-        
-        # Run the main loop until exit
-        await view.run_main_loop()
+    # Parse command line arguments
+    args = parse_arguments()
+    current_agent = args.agent
+    
+    # Main agent loop - handles switching between agents
+    while current_agent is not None:
+        current_agent = await run_agent_session(current_agent)
+        if current_agent:
+            print(f"\nSwitching to {current_agent} agent...")
+            # Small delay to show the switch message
+            await asyncio.sleep(0.5)
 
-    # This delay happens AFTER minimal_agent.run() has closed, giving background
+    # This delay happens AFTER all agents have closed, giving background
     # tasks time to finalize their shutdown before the script terminates.
     await asyncio.sleep(0.1)
 
@@ -500,75 +796,6 @@ python_functions = ["test_*"]
 
 --- END OF FILE pyproject.toml ---
 
---- START OF FILE README.md ---
-
-```md
-# Agent Dashboard
-
-A terminal client for the `fast-agent` framework.
-
-This project started as a way to have a more stable and transparent interface for agent development. The core is a Model-View-Controller (MVC) architecture, separating the application's state from its terminal UI and logic.
-
-## Technical Details
-
-The client is built with a few key ideas in mind:
-
-*   **Context Management.** Following the philosophy of the Model Context Protocol, the controller assembles the conversational history and other data to form the precise context sent to the agent on each turn. This allows for more deliberate, developer-driven context strategies.
-
-*   **Asynchronous Core.** The application uses `asyncio` and a non-blocking prompt, which keeps the UI responsive. It's designed to support more complex operations, like parallel agent interactions, and could be adapted for a GUI dashboard later.
-
-*   **Stateful History.** While the terminal shows a clean chat log, a comprehensive history is maintained in the background. This history can be saved automatically or manually, providing a useful artifact for debugging or resuming sessions.
-
-*   **Resilient Operation.** LLM or MCP server errors are handled by the controller, which rolls back the conversational state to its last valid point. The application also shuts down cleanly to avoid resource errors.
-
-*   **Comprehensive Testing.** The application includes a complete testing suite with unit tests, integration tests, and retry mechanisms to ensure reliability and maintainability.
-
-## Testing
-
-The project includes a comprehensive testing suite to ensure reliability and maintainability:
-
-### Running Tests
-
-```bash
-# Install test dependencies
-pip install pytest pytest-asyncio
-
-# Run all tests
-python run_tests.py
-
-# Run specific test file
-python run_tests.py test_model.py
-
-# Run with verbose output
-python run_tests.py -v
-```
-
-### Test Structure
-
-- **`test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
-- **`test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
-- **`test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
-
-### Test Features
-
-- **Retry Logic**: The controller now includes exponential backoff retry logic for agent calls, making the application more resilient to temporary network or API issues
-- **Mock Testing**: All tests use mocks to avoid external dependencies while thoroughly testing the application logic
-- **Async Support**: Full async/await support for testing the asynchronous nature of the application
-
-## Project Journey
-
-This client evolved through several stages:
-
-1.  Began with simple `fast-agent` scripts run from the command line.
-2.  Integrated a few powerful MCP servers (`filesystem`, `memory`, `fetch`), which revealed the potential of the protocol.
-3.  Shifted focus from thinking of `fast-agent` as a script runner to using it as a library within a client/server model.
-4.  Adopted the MVC pattern to cleanly separate concerns.
-5.  The result is this application—a stable tool for further agent development.
-
-```
-
---- END OF FILE README.md ---
-
 --- START OF FILE readonly_filesystem_server.py ---
 
 ```py
@@ -654,7 +881,7 @@ def main(allowed_dirs: List[Path] = typer.Argument(..., help="List of directorie
 
 --- END OF FILE readonly_filesystem_server.py ---
 
---- START OF FILE run_tests.py ---
+--- START OF FILE tests/run_tests.py ---
 
 ```py
 #!/usr/bin/env python3
@@ -711,9 +938,70 @@ if __name__ == "__main__":
     sys.exit(0 if success else 1) 
 ```
 
---- END OF FILE run_tests.py ---
+--- END OF FILE tests/run_tests.py ---
 
---- START OF FILE test_controller.py ---
+--- START OF FILE tests/test_agent_selection.py ---
+
+```py
+#!/usr/bin/env python3
+"""
+Test script for agent selection functionality.
+"""
+
+import asyncio
+from agent_definitions import get_agent, list_available_agents, AGENT_REGISTRY
+
+def test_agent_registry():
+    """Test the agent registry functionality."""
+    print("Testing Agent Registry...")
+    
+    # Test listing available agents
+    available_agents = list_available_agents()
+    print(f"Available agents: {available_agents}")
+    assert len(available_agents) >= 2, "Should have at least 2 agents"
+    
+    # Test getting valid agents
+    minimal_agent = get_agent("minimal")
+    coding_agent = get_agent("coding")
+    print("✓ Successfully retrieved minimal and coding agents")
+    
+    # Test getting invalid agent
+    try:
+        get_agent("nonexistent")
+        assert False, "Should have raised KeyError"
+    except KeyError as e:
+        print(f"✓ Correctly raised KeyError for invalid agent: {e}")
+    
+    print("All agent registry tests passed!")
+
+def test_agent_characteristics():
+    """Test that agents have different characteristics."""
+    print("\nTesting Agent Characteristics...")
+    
+    minimal_agent = get_agent("minimal")
+    coding_agent = get_agent("coding")
+    
+    # Check that they're different instances
+    assert minimal_agent != coding_agent, "Agents should be different instances"
+    
+    # Check that they have different names
+    assert minimal_agent.name != coding_agent.name, "Agents should have different names"
+    
+    print("✓ Agents have different characteristics")
+    print(f"  Minimal agent: {minimal_agent.name}")
+    print(f"  Coding agent: {coding_agent.name}")
+    
+    print("All agent characteristics tests passed!")
+
+if __name__ == "__main__":
+    test_agent_registry()
+    test_agent_characteristics()
+    print("\n🎉 All tests passed! Agent selection system is working correctly.") 
+```
+
+--- END OF FILE tests/test_agent_selection.py ---
+
+--- START OF FILE tests/test_controller.py ---
 
 ```py
 import pytest
@@ -879,9 +1167,9 @@ async def test_agent_prompt_final_failure():
     mock_model.set_state.assert_any_call(AppState.ERROR, error_message="Agent Error after 3 attempts: Persistent error") 
 ```
 
---- END OF FILE test_controller.py ---
+--- END OF FILE tests/test_controller.py ---
 
---- START OF FILE test_integration.py ---
+--- START OF FILE tests/test_integration.py ---
 
 ```py
 import pytest
@@ -1009,9 +1297,9 @@ async def test_conversation_flow_integration():
     assert model.conversation_history[5].role == 'assistant' 
 ```
 
---- END OF FILE test_integration.py ---
+--- END OF FILE tests/test_integration.py ---
 
---- START OF FILE test_model.py ---
+--- START OF FILE tests/test_model.py ---
 
 ```py
 import pytest
@@ -1140,7 +1428,7 @@ async def test_user_preferences():
     assert model.user_preferences.get("test_setting") == "test_value" 
 ```
 
---- END OF FILE test_model.py ---
+--- END OF FILE tests/test_model.py ---
 
 --- START OF FILE view.py ---
 

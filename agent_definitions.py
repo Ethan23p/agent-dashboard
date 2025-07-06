@@ -18,7 +18,7 @@ minimal_agent = FastAgent("Minimal Agent")
     You can read files, write files, and list directory contents.
     Always be helpful and provide clear responses to user requests.
     """,
-    servers=["filesystem"],
+    servers=["filesystem", "fetch", "sequential-thinking"],
     request_params=RequestParams(maxTokens=2048),
     use_history=False 
 )
