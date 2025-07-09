@@ -479,39 +479,32 @@ logger:
 # Defines the external tools and services available to your agents.
 mcp:
   servers:
-    # Fetch server for web scraping and data retrieval.
+    # Fetch server for web scraping and data retrieval
     fetch:
-      # Use the Python runner 'uvx'
       command: "uvx"
-      # Use the Python package name 'mcp-server-fetch'
       args: ["mcp-server-fetch"]
     
-    # Filesystem server for reading/writing local files.
+    # Filesystem server for reading/writing local files
     filesystem:
-      # The command to run the server. 'npx' is a good cross-platform choice.
       command: "npx"
-      # Arguments for the command.
       args:
-        - "-y" # Automatically say yes to npx prompts
+        - "-y"
         - "@modelcontextprotocol/server-filesystem"
-        # IMPORTANT: Replace this with the ABSOLUTE path to the directory
-        # you want the agent to have access to. Using absolute paths is crucial
-        # for reliability.
         - "G:/My Drive/AI Resources/Open collection"
 
-    # New read-only server for the planner
-    readonly_fs:
-      command: "uv" # or "python"
-      args: ["run", "readonly_filesystem_server.py", "G:/My Drive/AI Resources/Open collection"] # Allow access to current dir
+    # Secure filesystem server for read-only access to specific directories
+    secure-filesystem:
+      command: "uv"
+      args: ["run", "secure_filesystem_server.py", "G:/My Drive/AI Resources/Open collection"]
 
-    # Memory server for persistent knowledge graph memory.
+    # Memory server for persistent knowledge graph memory
     memory:
       command: "npx"
       args:
         - "-y"
         - "@modelcontextprotocol/server-memory"
 
-    # Sequential Thinking server for dynamic and reflective problem-solving.
+    # Sequential Thinking server for dynamic and reflective problem-solving
     sequential-thinking:
       command: "npx"
       args:
@@ -796,10 +789,10 @@ python_functions = ["test_*"]
 
 --- END OF FILE pyproject.toml ---
 
---- START OF FILE readonly_filesystem_server.py ---
+--- START OF FILE secure_filesystem_server.py ---
 
 ```py
-# readonly_filesystem_server.py
+# secure_filesystem_server.py
 
 import os
 from pathlib import Path
@@ -809,7 +802,7 @@ from mcp.server.fastmcp import FastMCP
 import typer
 
 # Initialize the FastMCP server
-mcp = FastMCP("readonly_fs")
+mcp = FastMCP("secure-filesystem")
 
 def is_path_safe(base_dirs: List[Path], target_path: Path) -> bool:
     """Ensure the target path is within one of the allowed base directories."""
@@ -879,7 +872,7 @@ def main(allowed_dirs: List[Path] = typer.Argument(..., help="List of directorie
     pass
 ```
 
---- END OF FILE readonly_filesystem_server.py ---
+--- END OF FILE secure_filesystem_server.py ---
 
 --- START OF FILE tests/run_tests.py ---
 

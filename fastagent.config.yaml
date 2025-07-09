@@ -21,39 +21,32 @@ logger:
 # Defines the external tools and services available to your agents.
 mcp:
   servers:
-    # Fetch server for web scraping and data retrieval.
+    # Fetch server for web scraping and data retrieval
     fetch:
-      # Use the Python runner 'uvx'
       command: "uvx"
-      # Use the Python package name 'mcp-server-fetch'
       args: ["mcp-server-fetch"]
     
-    # Filesystem server for reading/writing local files.
+    # Filesystem server for reading/writing local files
     filesystem:
-      # The command to run the server. 'npx' is a good cross-platform choice.
       command: "npx"
-      # Arguments for the command.
       args:
-        - "-y" # Automatically say yes to npx prompts
+        - "-y"
         - "@modelcontextprotocol/server-filesystem"
-        # IMPORTANT: Replace this with the ABSOLUTE path to the directory
-        # you want the agent to have access to. Using absolute paths is crucial
-        # for reliability.
         - "G:/My Drive/AI Resources/Open collection"
 
-    # New read-only server for the planner
-    readonly_fs:
-      command: "uv" # or "python"
-      args: ["run", "readonly_filesystem_server.py", "G:/My Drive/AI Resources/Open collection"] # Allow access to current dir
+    # Secure filesystem server for read-only access to specific directories
+    secure-filesystem:
+      command: "uv"
+      args: ["run", "secure_filesystem_server.py", "G:/My Drive/AI Resources/Open collection"]
 
-    # Memory server for persistent knowledge graph memory.
+    # Memory server for persistent knowledge graph memory
     memory:
       command: "npx"
       args:
         - "-y"
         - "@modelcontextprotocol/server-memory"
 
-    # Sequential Thinking server for dynamic and reflective problem-solving.
+    # Sequential Thinking server for dynamic and reflective problem-solving
     sequential-thinking:
       command: "npx"
       args:

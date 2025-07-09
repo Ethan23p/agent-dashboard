@@ -1,4 +1,4 @@
-# readonly_filesystem_server.py
+# secure_filesystem_server.py
 
 import os
 from pathlib import Path
@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 import typer
 
 # Initialize the FastMCP server
-mcp = FastMCP("readonly_fs")
+mcp = FastMCP("secure-filesystem")
 
 def is_path_safe(base_dirs: List[Path], target_path: Path) -> bool:
     """Ensure the target path is within one of the allowed base directories."""
