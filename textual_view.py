@@ -1,8 +1,7 @@
 # textual_view.py
-import asyncio
 from typing import TYPE_CHECKING
 
-from textual import on, work
+from textual import on
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Header, Input, RichLog
 
@@ -58,16 +57,15 @@ class AgentDashboardApp(App):
         self.input_widget.focus()
         self.log_widget.write("🤖 Agent is ready. Say 'Hi' or type a command.")
 
-    @work
     async def on_model_update(self) -> None:
-        """Callback triggered when the model's state changes.
-        
-        This method is decorated with @work to ensure that UI updates
-        are scheduled to run on the main thread, which is crucial because
-        the notification might come from a background worker thread.
         """
-        self._render_status()
-        self._render_new_messages()
+        Callback triggered when the model's state changes.
+        
+        This is now a standard awaitable coroutine. We use `call_later`
+        to ensure the UI updates happen safely on the main app thread.
+        """
+        self.call_later(self._render_status)
+        self.call_later(self._render_new_messages)
 
     def _render_status(self) -> None:
         """Renders status messages like 'thinking' or errors to the log."""
@@ -93,19 +91,27 @@ class AgentDashboardApp(App):
             self._last_rendered_message_count = current_message_count
 
     @on(Input.Submitted)
-    async def on_input(self, event: Input.Submitted) -> None:
-        """Handles the submission of user input."""
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handles the submission of user input by starting a worker."""
         user_input = event.value
         if not user_input:
             return
+        
+        # Clear the input immediately for a responsive feel
+        self.input_widget.clear()
+        
+        # Run the entire controller interaction in a background worker
+        # to keep the UI from freezing during agent processing.
+        self.run_worker(self.handle_submission(user_input), exclusive=True)
 
-        # The controller can raise exceptions to signal flow changes
+    async def handle_submission(self, user_input: str) -> None:
+        """
+        This method is run in a worker. It processes the user input
+        and handles commands that control the app's lifecycle.
+        """
         try:
             await self.controller.process_user_input(user_input)
         except ExitCommand:
-            self.exit() # Gracefully exit the Textual app
+            self.exit()
         except SwitchAgentCommand as e:
-            # Exit the app, returning the new agent name to main.py
             self.exit(result=e.agent_name)
-        
-        self.input_widget.clear()
