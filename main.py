@@ -1,11 +1,11 @@
+
 # main.py
 import asyncio
-import sys
 import argparse
 
 from model import Model
-from view import View
-from controller import Controller, ExitCommand, SwitchAgentCommand
+from textual_view import AgentDashboardApp  # <-- Import the new Textual view
+from controller import Controller, SwitchAgentCommand
 from agent_definitions import get_agent, list_available_agents
 
 def print_shutdown_message():
@@ -23,66 +23,70 @@ def parse_arguments():
     )
     return parser.parse_args()
 
-async def run_agent_session(agent_name: str):
+async def run_agent_session(agent_name: str) -> str | None:
     """
-    Run a session with a specific agent.
+    Run a session with a specific agent using the Textual UI.
     
     Args:
         agent_name: The name of the agent to run
         
     Returns:
-        The new agent name if switching, None if exiting
+        The new agent name if switching, None if exiting.
     """
     try:
-        # Get the selected agent from the registry
         selected_agent = get_agent(agent_name)
         print(f"Starting {agent_name} agent...")
         
-        # Run the selected agent
         async with selected_agent.run() as agent_app:
-            # Initialize MVC components
             model = Model()
             controller = Controller(model, agent_app)
-            view = View(model, controller)
             
-            # Run the main loop until exit or switch
-            await view.run_main_loop()
-            return None  # Normal exit
+            # Instantiate and run the Textual app
+            tui_app = AgentDashboardApp(model, controller)
             
-    except SwitchAgentCommand as e:
-        return e.agent_name  # Switch to new agent
+            # The `run` method is blocking. It will return a result when
+            # the app calls `self.exit(result=...)`.
+            switch_to_agent = await tui_app.run_async()
+            
+            # If the app exited with a result, it's the name of the new agent.
+            return switch_to_agent
+
     except KeyError as e:
         print(f"Error: {e}")
         print(f"Available agents: {', '.join(list_available_agents())}")
         return None
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return None
 
 async def main():
     """
-    The main entry point for the application.
+    The main entry point for the application. It manages the agent-switching loop.
     """
-    # Parse command line arguments
     args = parse_arguments()
     current_agent = args.agent
     
-    # Main agent loop - handles switching between agents
     while current_agent is not None:
-        current_agent = await run_agent_session(current_agent)
-        if current_agent:
-            print(f"\nSwitching to {current_agent} agent...")
-            # Small delay to show the switch message
-            await asyncio.sleep(0.5)
+        # run_agent_session will block until the Textual app exits.
+        # It returns the name of the next agent, or None to quit.
+        next_agent = await run_agent_session(current_agent)
+        
+        if next_agent:
+            print(f"\nSwitching to {next_agent} agent...")
+            await asyncio.sleep(0.1) # Brief pause for visual feedback
+            current_agent = next_agent
+        else:
+            # No next agent, so we exit the loop.
+            current_agent = None
 
     # This delay happens AFTER all agents have closed, giving background
     # tasks time to finalize their shutdown before the script terminates.
     await asyncio.sleep(0.1)
 
-
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        # We no longer catch SystemExit here, but keep it for robustness.
         pass
     finally:
-        # The final message is printed after everything has shut down.
         print_shutdown_message()
