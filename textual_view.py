@@ -1,12 +1,13 @@
 # textual_view.py
 from typing import TYPE_CHECKING
 
+from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Header, Input, RichLog
 
 from controller import ExitCommand, SwitchAgentCommand
-from model import AppState, Model
+from model import IdleState, AgentIsThinkingState, ErrorState, Model
 
 if TYPE_CHECKING:
     from controller import Controller
@@ -14,8 +15,6 @@ if TYPE_CHECKING:
 class AgentDashboardApp(App):
     """The Textual-based user interface for the agent dashboard."""
 
-    TITLE = "Agent Dashboard"
-    SUB_TITLE = "A fast-agent client"
     CSS = """
     Screen {
         background: $surface;
@@ -35,13 +34,25 @@ class AgentDashboardApp(App):
         ("ctrl+q", "quit", "Quit"),
     ]
 
-    def __init__(self, model: Model, controller: "Controller"):
+    def __init__(self, model: Model, controller: "Controller", agent_name: str = "agent"):
         super().__init__()
         self.model = model
         self.controller = controller
+        self.agent_name = agent_name  # Store the agent name
         self._last_rendered_message_count = 0
         # Register the view as a listener to the model
         self.model.register_listener(self.on_model_update)
+        # Map state types to their rendering methods within the View
+        self.state_renderers = {
+            IdleState: self._render_idle,
+            AgentIsThinkingState: self._render_thinking,
+            ErrorState: self._render_error,
+        }
+        # Map message roles to their rendering methods
+        self.message_renderers = {
+            'user': self._render_user_message,
+            'assistant': self._render_assistant_message,
+        }
 
     def compose(self) -> ComposeResult:
         """Create the core UI widgets."""
@@ -55,6 +66,10 @@ class AgentDashboardApp(App):
         self.log_widget = self.query_one(RichLog)
         self.input_widget = self.query_one(Input)
         self.input_widget.focus()
+        
+        # Set the initial title and sub_title
+        self.title = "Agent Dashboard"
+        self.sub_title = f"Active Agent: [bold]{self.agent_name}[/]"
         self.log_widget.write("🤖 Agent is ready. Say 'Hi' or type a command.")
 
     async def on_model_update(self) -> None:
@@ -68,15 +83,42 @@ class AgentDashboardApp(App):
         self.call_later(self._render_new_messages)
 
     def _render_status(self) -> None:
-        """Renders status messages like 'thinking' or errors to the log."""
-        if self.model.application_state == AppState.AGENT_IS_THINKING:
-            self.log_widget.write("...")
-        elif self.model.application_state == AppState.ERROR and self.model.last_error_message:
-            self.log_widget.write(f"[bold red]💥 Error:[/bold red] {self.model.last_error_message}")
-            self.model.last_error_message = None # Clear after displaying
-        elif self.model.application_state == AppState.IDLE and self.model.last_success_message:
-            self.log_widget.write(f"[bold green]✅ Success:[/bold green] {self.model.last_success_message}")
-            self.model.last_success_message = None # Clear after displaying
+        """Renders the status by dispatching to the correct method."""
+        state_type = type(self.model.application_state)
+        # Polymorphic call without the if/elif block
+        renderer = self.state_renderers.get(state_type)
+        if renderer:
+            renderer()
+
+    # --- Status methods now update self.sub_title ---
+
+    def _render_idle(self) -> None:
+        if self.model.last_success_message:
+            self.sub_title = f"✅ {self.model.last_success_message}"
+            self.model.last_success_message = None
+        else:
+            # Revert to showing the active agent when idle
+            self.sub_title = f"Active Agent: [bold]{self.agent_name}[/]"
+
+    def _render_thinking(self) -> None:
+        self.sub_title = "🤔 Thinking..."
+
+    def _render_error(self) -> None:
+        if self.model.last_error_message:
+            self.sub_title = f"💥 Error: {self.model.last_error_message}"
+            self.model.last_error_message = None
+
+    # --- Specific message rendering methods ---
+
+    def _render_user_message(self, message) -> None:
+        """Renders a user message."""
+        log_message = Text.from_markup(f"[bold blue]You:[/bold blue] {message.last_text()}")
+        self.log_widget.write(log_message)
+
+    def _render_assistant_message(self, message) -> None:
+        """Renders an assistant message."""
+        log_message = Text.from_markup(f"[bold magenta]Agent:[/bold magenta] {message.last_text()}")
+        self.log_widget.write(log_message)
 
     def _render_new_messages(self) -> None:
         """Renders only new messages from the conversation history to the log."""
@@ -84,10 +126,13 @@ class AgentDashboardApp(App):
         if current_message_count > self._last_rendered_message_count:
             new_messages = self.model.conversation_history[self._last_rendered_message_count:]
             for message in new_messages:
-                if message.role == 'user':
-                    self.log_widget.write(f"[bold blue]You:[/bold blue] {message.last_text()}")
-                elif message.role == 'assistant':
-                    self.log_widget.write(f"[bold magenta]Agent:[/bold magenta] {message.last_text()}")
+                # Polymorphic dispatch based on message role
+                renderer = self.message_renderers.get(message.role)
+                if renderer:
+                    renderer(message)
+                else:
+                    # Fallback for unknown roles
+                    self.log_widget.write(f"[dim]{message.role}:[/dim] {message.last_text()}")
             self._last_rendered_message_count = current_message_count
 
     @on(Input.Submitted)

@@ -8,53 +8,76 @@ from mcp_agent.core.request_params import RequestParams
 # NOTE: All agents should use use_history=False since we manage conversation
 # history ourselves in the Model class and pass it explicitly to the agent.
 
-# Simple single agent for basic operations
-minimal_agent = FastAgent("Minimal Agent")
+# A list of dictionaries, where each dictionary defines an agent.
+# This is flexible – only include the keys you need for each agent.
+AGENT_DEFINITIONS = [
+    {
+        "name": "minimal",
+        "description": "A helpful assistant for general operations.",
+        "instruction": """
+        You are a helpful assistant that can perform various operations.
+        You can read files, write files, and list directory contents.
+        Always be helpful and provide clear responses to user requests.
+        """,
+        "servers": ["filesystem", "fetch", "sequential-thinking"],
+        "max_tokens": 2048,
+    },
+    {
+        "name": "coding",
+        "description": "A specialized coding assistant.",
+        "instruction": """
+        You are a specialized coding assistant. You excel at:
+        - Code review and suggestions
+        - Debugging and problem-solving
+        - Explaining complex technical concepts
+        - Providing code examples and best practices
+        
+        Always provide clear, well-documented code examples when relevant.
+        """,
+        "servers": ["filesystem"],
+        "max_tokens": 4096,
+    },
+    # Example of an agent with fewer custom parameters.
+    # It will use the default max_tokens.
+    {
+        "name": "summarizer",
+        "description": "A concise summarization agent.",
+        "instruction": "Summarize any provided text concisely.",
+        "servers": ["fetch"],
+    },
+]
 
-@minimal_agent.agent(
-    name="agent",
-    instruction="""
-    You are a helpful assistant that can perform various operations.
-    You can read files, write files, and list directory contents.
-    Always be helpful and provide clear responses to user requests.
-    """,
-    servers=["filesystem", "fetch", "sequential-thinking"],
-    request_params=RequestParams(maxTokens=2048),
-    use_history=False 
-)
-
-async def agent():
-    """ This function is a placeholder for the decorator. """
-    pass
-
-# Example of a second agent with different characteristics
-coding_agent = FastAgent("Coding Assistant")
-
-@coding_agent.agent(
-    name="agent",
-    instruction="""
-    You are a specialized coding assistant. You excel at:
-    - Code review and suggestions
-    - Debugging and problem-solving
-    - Explaining complex technical concepts
-    - Providing code examples and best practices
+def _create_agent_from_definition(definition: dict) -> FastAgent:
+    """Factory function to build a FastAgent instance from a dictionary."""
     
-    Always provide clear, well-documented code examples when relevant.
-    """,
-    servers=["filesystem"],
-    request_params=RequestParams(maxTokens=4096),
-    use_history=False
-)
+    # Use .get() to provide defaults for optional keys
+    description = definition.get("description", "A fast-agent.")
+    instruction = definition.get("instruction", "You are a helpful assistant.")
+    servers = definition.get("servers", [])
+    max_tokens = definition.get("max_tokens", 2048)
 
-async def coding_agent_func():
-    """ This function is a placeholder for the decorator. """
-    pass
+    agent_instance = FastAgent(description)
 
-# Agent Registry - maps agent names to their FastAgent instances
-AGENT_REGISTRY = {
-    "minimal": minimal_agent,
-    "coding": coding_agent,
-}
+    # The decorator needs a function to decorate, even a placeholder
+    @agent_instance.agent(
+        name="agent",
+        instruction=instruction,
+        servers=servers,
+        request_params=RequestParams(maxTokens=max_tokens),
+        use_history=False
+    )
+    async def placeholder_func(): pass
+    
+    return agent_instance
+
+# The registry is now BUILT dynamically from the definitions list.
+AGENT_REGISTRY = {}
+
+# Populate the registry
+for definition in AGENT_DEFINITIONS:
+    agent_name = definition.get("name")
+    if agent_name:
+        AGENT_REGISTRY[agent_name] = _create_agent_from_definition(definition)
 
 def get_agent(agent_name: str = "minimal"):
     """

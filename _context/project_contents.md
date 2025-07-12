@@ -50,53 +50,76 @@ from mcp_agent.core.request_params import RequestParams
 # NOTE: All agents should use use_history=False since we manage conversation
 # history ourselves in the Model class and pass it explicitly to the agent.
 
-# Simple single agent for basic operations
-minimal_agent = FastAgent("Minimal Agent")
+# A list of dictionaries, where each dictionary defines an agent.
+# This is flexible – only include the keys you need for each agent.
+AGENT_DEFINITIONS = [
+    {
+        "name": "minimal",
+        "description": "A helpful assistant for general operations.",
+        "instruction": """
+        You are a helpful assistant that can perform various operations.
+        You can read files, write files, and list directory contents.
+        Always be helpful and provide clear responses to user requests.
+        """,
+        "servers": ["filesystem", "fetch", "sequential-thinking"],
+        "max_tokens": 2048,
+    },
+    {
+        "name": "coding",
+        "description": "A specialized coding assistant.",
+        "instruction": """
+        You are a specialized coding assistant. You excel at:
+        - Code review and suggestions
+        - Debugging and problem-solving
+        - Explaining complex technical concepts
+        - Providing code examples and best practices
+        
+        Always provide clear, well-documented code examples when relevant.
+        """,
+        "servers": ["filesystem"],
+        "max_tokens": 4096,
+    },
+    # Example of an agent with fewer custom parameters.
+    # It will use the default max_tokens.
+    {
+        "name": "summarizer",
+        "description": "A concise summarization agent.",
+        "instruction": "Summarize any provided text concisely.",
+        "servers": ["fetch"],
+    },
+]
 
-@minimal_agent.agent(
-    name="agent",
-    instruction="""
-    You are a helpful assistant that can perform various operations.
-    You can read files, write files, and list directory contents.
-    Always be helpful and provide clear responses to user requests.
-    """,
-    servers=["filesystem", "fetch", "sequential-thinking"],
-    request_params=RequestParams(maxTokens=2048),
-    use_history=False 
-)
-
-async def agent():
-    """ This function is a placeholder for the decorator. """
-    pass
-
-# Example of a second agent with different characteristics
-coding_agent = FastAgent("Coding Assistant")
-
-@coding_agent.agent(
-    name="agent",
-    instruction="""
-    You are a specialized coding assistant. You excel at:
-    - Code review and suggestions
-    - Debugging and problem-solving
-    - Explaining complex technical concepts
-    - Providing code examples and best practices
+def _create_agent_from_definition(definition: dict) -> FastAgent:
+    """Factory function to build a FastAgent instance from a dictionary."""
     
-    Always provide clear, well-documented code examples when relevant.
-    """,
-    servers=["filesystem"],
-    request_params=RequestParams(maxTokens=4096),
-    use_history=False
-)
+    # Use .get() to provide defaults for optional keys
+    description = definition.get("description", "A fast-agent.")
+    instruction = definition.get("instruction", "You are a helpful assistant.")
+    servers = definition.get("servers", [])
+    max_tokens = definition.get("max_tokens", 2048)
 
-async def coding_agent_func():
-    """ This function is a placeholder for the decorator. """
-    pass
+    agent_instance = FastAgent(description)
 
-# Agent Registry - maps agent names to their FastAgent instances
-AGENT_REGISTRY = {
-    "minimal": minimal_agent,
-    "coding": coding_agent,
-}
+    # The decorator needs a function to decorate, even a placeholder
+    @agent_instance.agent(
+        name="agent",
+        instruction=instruction,
+        servers=servers,
+        request_params=RequestParams(maxTokens=max_tokens),
+        use_history=False
+    )
+    async def placeholder_func(): pass
+    
+    return agent_instance
+
+# The registry is now BUILT dynamically from the definitions list.
+AGENT_REGISTRY = {}
+
+# Populate the registry
+for definition in AGENT_DEFINITIONS:
+    agent_name = definition.get("name")
+    if agent_name:
+        AGENT_REGISTRY[agent_name] = _create_agent_from_definition(definition)
 
 def get_agent(agent_name: str = "minimal"):
     """
@@ -140,13 +163,16 @@ def list_available_agents():
 # controller.py
 import asyncio
 import random
+from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 from mcp_agent.core.prompt import Prompt
-from model import AppState, Model
+from model import Model, save_history, load_history, IdleState, AgentIsThinkingState, ErrorState
 
 if TYPE_CHECKING:
     from mcp_agent.core.agent_app import AgentApp
+
+# EXCEPTIONS
 
 class ExitCommand(Exception):
     """Custom exception to signal a graceful exit from the main loop."""
@@ -157,6 +183,99 @@ class SwitchAgentCommand(Exception):
     def __init__(self, agent_name: str):
         self.agent_name = agent_name
         super().__init__(f"Switch to agent: {agent_name}")
+
+# COMMAND PATTERN IMPLEMENTATION
+
+class Command(ABC):
+    """Abstract base class for all commands."""
+    @abstractmethod
+    async def execute(self, controller: "Controller", args: list[str]):
+        pass
+
+# CONCRETE COMMAND IMPLEMENTATIONS
+
+class ExitCommandImpl(Command):
+    """Command to exit the application."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        from controller import ExitCommand as ExitException  # Avoid name clash
+        raise ExitException()
+
+class SwitchCommand(Command):
+    """Command to switch to a different agent."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        if not args:
+            await controller.model.set_state(ErrorState(), error_message="Please provide an agent name: /switch <agent_name>")
+            return
+        
+        agent_name = args[0]
+        # Import here to avoid circular imports
+        from agent_definitions import list_available_agents
+        available_agents = list_available_agents()
+        
+        if agent_name not in available_agents:
+            await controller.model.set_state(
+                ErrorState(), 
+                error_message=f"Agent '{agent_name}' not found. Available agents: {', '.join(available_agents)}"
+            )
+            return
+        
+        await controller.model.set_state(IdleState(), success_message=f"Switching to {agent_name} agent...")
+        raise SwitchAgentCommand(agent_name)
+
+class ListAgentsCommand(Command):
+    """Command to list available agents."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        from agent_definitions import list_available_agents
+        available_agents = list_available_agents()
+        await controller.model.set_state(
+            IdleState(), 
+            success_message=f"Available agents: {', '.join(available_agents)}"
+        )
+
+class SaveCommand(Command):
+    """Command to save conversation history to a file."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        filename = args[0] if args else None
+        # If filename provided, ensure it's in the context directory
+        if filename and not filename.startswith('/') and not filename.startswith('\\'):
+            context_dir = controller.model._get_context_dir()
+            filename = f"{context_dir}/{filename}"
+        else:
+            filename = controller.model.user_preferences["auto_save_filename"]
+        
+        success = await save_history(controller.model.conversation_history, filename)
+        if success:
+            await controller.model.set_state(IdleState(), success_message="History saved successfully.")
+        else:
+            await controller.model.set_state(ErrorState(), error_message="Failed to save history.")
+
+class LoadCommand(Command):
+    """Command to load conversation history from a file."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        if not args:
+            await controller.model.set_state(ErrorState(), error_message="Please provide a filename: /load <filename>")
+            return
+        filename = args[0]
+        # If filename doesn't start with path separator, assume it's in context directory
+        if not filename.startswith('/') and not filename.startswith('\\'):
+            context_dir = controller.model._get_context_dir()
+            filename = f"{context_dir}/{filename}"
+        
+        loaded_history = await load_history(filename)
+        if loaded_history:
+            controller.model.conversation_history = loaded_history
+            await controller.model._notify_listeners()
+            await controller.model.set_state(IdleState(), success_message="History loaded successfully.")
+        else:
+            await controller.model.set_state(ErrorState(), error_message="Failed to load history.")
+
+class ClearCommand(Command):
+    """Command to clear conversation history."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        await controller.model.clear_history()
+        await controller.model.set_state(IdleState(), success_message="Conversation history cleared.")
+
+# MAIN CONTROLLER CLASS
 
 class Controller:
     """
@@ -171,6 +290,18 @@ class Controller:
         # For now, we'll use the direct agent access since we only have one agent
         # This can be enhanced later when we support multiple agents
         self.agent = agent_app.agent
+        # The command map now holds INSTANCES of our command classes
+        self.command_map = {
+            'exit': ExitCommandImpl(),
+            'quit': ExitCommandImpl(),
+            'save': SaveCommand(),
+            'load': LoadCommand(),
+            'clear': ClearCommand(),
+            'switch': SwitchCommand(),
+            'agents': ListAgentsCommand(),
+        }
+
+    # PUBLIC INTERFACE
 
     async def process_user_input(self, user_input: str):
         """
@@ -188,99 +319,27 @@ class Controller:
         else:
             await self._handle_agent_prompt(stripped_input)
 
+    # PRIVATE METHODS
+
     async def _handle_command(self, command_str: str):
-        """Parses and executes client-side commands like /save or /exit."""
+        """Parses and executes client-side commands."""
         parts = command_str.lower().split()
         command_name = parts[0][1:]  # remove the '/'
         args = parts[1:]
 
-        command_map = {
-            'exit': self._cmd_exit,
-            'quit': self._cmd_exit,
-            'save': self._cmd_save,
-            'load': self._cmd_load,
-            'clear': self._cmd_clear,
-            'switch': self._cmd_switch,
-            'agents': self._cmd_list_agents,
-        }
-
-        handler = command_map.get(command_name)
-        if handler:
-            await handler(args)
+        command = self.command_map.get(command_name)
+        if command:
+            # Polymorphism in action! We just call execute() on whatever object we get.
+            await command.execute(self, args)
         else:
-            await self.model.set_state(AppState.ERROR, error_message=f"Unknown command: /{command_name}")
-
-    async def _cmd_exit(self, args):
-        raise ExitCommand()
-
-    async def _cmd_switch(self, args):
-        """Switch to a different agent."""
-        if not args:
-            await self.model.set_state(AppState.ERROR, error_message="Please provide an agent name: /switch <agent_name>")
-            return
-        
-        agent_name = args[0]
-        # Import here to avoid circular imports
-        from agent_definitions import list_available_agents
-        available_agents = list_available_agents()
-        
-        if agent_name not in available_agents:
-            await self.model.set_state(
-                AppState.ERROR, 
-                error_message=f"Agent '{agent_name}' not found. Available agents: {', '.join(available_agents)}"
-            )
-            return
-        
-        await self.model.set_state(AppState.IDLE, success_message=f"Switching to {agent_name} agent...")
-        raise SwitchAgentCommand(agent_name)
-
-    async def _cmd_list_agents(self, args):
-        """List available agents."""
-        from agent_definitions import list_available_agents
-        available_agents = list_available_agents()
-        await self.model.set_state(
-            AppState.IDLE, 
-            success_message=f"Available agents: {', '.join(available_agents)}"
-        )
-
-    async def _cmd_save(self, args):
-        filename = args[0] if args else None
-        # If filename provided, ensure it's in the context directory
-        if filename and not filename.startswith('/') and not filename.startswith('\\'):
-            context_dir = self.model._get_context_dir()
-            filename = f"{context_dir}/{filename}"
-        success = await self.model.save_history_to_file(filename)
-        if success:
-            await self.model.set_state(AppState.IDLE, success_message="History saved successfully.")
-        else:
-            await self.model.set_state(AppState.ERROR, error_message="Failed to save history.")
-
-    async def _cmd_load(self, args):
-        if not args:
-            await self.model.set_state(AppState.ERROR, error_message="Please provide a filename: /load <filename>")
-            return
-        filename = args[0]
-        # If filename doesn't start with path separator, assume it's in context directory
-        if not filename.startswith('/') and not filename.startswith('\\'):
-            context_dir = self.model._get_context_dir()
-            filename = f"{context_dir}/{filename}"
-        success = await self.model.load_history_from_file(filename)
-        if success:
-            await self.model.set_state(AppState.IDLE, success_message="History loaded successfully.")
-        else:
-            await self.model.set_state(AppState.ERROR, error_message="Failed to load history.")
-
-    async def _cmd_clear(self, args):
-        await self.model.clear_history()
-        await self.model.set_state(AppState.IDLE, success_message="Conversation history cleared.")
-
+            await self.model.set_state(ErrorState(), error_message=f"Unknown command: /{command_name}")
 
     async def _handle_agent_prompt(self, user_prompt: str):
         """
         Manages the full lifecycle of a conversational turn with the agent,
         now with a retry mechanism.
         """
-        await self.model.set_state(AppState.AGENT_IS_THINKING)
+        await self.model.set_state(AgentIsThinkingState())
         user_message = Prompt.user(user_prompt)
         await self.model.add_message(user_message)
 
@@ -296,19 +355,19 @@ class Controller:
                 await self.model.add_message(response_message)
                 
                 # If successful, break the loop
-                await self.model.set_state(AppState.IDLE)
+                await self.model.set_state(IdleState())
                 if self.model.user_preferences.get("auto_save_enabled"):
-                    await self.model.save_history_to_file()
+                    await save_history(self.model.conversation_history, self.model.user_preferences["auto_save_filename"])
                 return # Exit the method on success
 
             except Exception as e:
                 if attempt < max_retries - 1:
                     delay = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
-                    await self.model.set_state(AppState.ERROR, error_message=f"Agent Error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.2f}s...")
+                    await self.model.set_state(ErrorState(), error_message=f"Agent Error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.2f}s...")
                     await asyncio.sleep(delay)
                 else:
                     # Final attempt failed
-                    await self.model.set_state(AppState.ERROR, error_message=f"Agent Error after {max_retries} attempts: {e}")
+                    await self.model.set_state(ErrorState(), error_message=f"Agent Error after {max_retries} attempts: {e}")
                     await self.model.pop_last_message() # Roll back the user message
                     return # Exit after final failure
 ```
@@ -402,1066 +461,6 @@ python test_agent_selection.py
 ```
 
 --- END OF FILE docs/AGENT_SELECTION.md ---
-
---- START OF FILE docs/elicitations/elicitation_account_server.py ---
-
-```py
-"""
-MCP Server for Account Creation Demo
-
-This server provides an account signup form that can be triggered
-by tools, demonstrating LLM-initiated elicitations.
-
-Note: Following MCP spec, we don't collect sensitive information like passwords.
-"""
-
-import logging
-import sys
-
-from mcp.server.elicitation import (
-    AcceptedElicitation,
-    CancelledElicitation,
-    DeclinedElicitation,
-)
-from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    stream=sys.stderr,
-)
-logger = logging.getLogger("elicitation_account_server")
-
-# Create MCP server
-mcp = FastMCP("Account Creation Server", log_level="INFO")
-
-
-@mcp.tool()
-async def create_user_account(service_name: str = "MyApp") -> str:
-    """
-    Create a new user account for the specified service.
-
-    Args:
-        service_name: The name of the service to create an account for
-
-    Returns:
-        Status message about the account creation
-    """
-    # This tool triggers the elicitation form
-    logger.info(f"Creating account for service: {service_name}")
-
-    class AccountSignup(BaseModel):
-        username: str = Field(description="Choose a username", min_length=3, max_length=20)
-        email: str = Field(description="Your email address", json_schema_extra={"format": "email"})
-        full_name: str = Field(description="Your full name", max_length=30)
-
-        language: str = Field(
-            default="en",
-            description="Preferred language",
-            json_schema_extra={
-                "enum": [
-                    "en",
-                    "zh",
-                    "es",
-                    "fr",
-                    "de",
-                    "ja",
-                ],
-                "enumNames": ["English", "中文", "Español", "Français", "Deutsch", "日本語"],
-            },
-        )
-        agree_terms: bool = Field(description="I agree to the terms of service")
-        marketing_emails: bool = Field(False, description="Send me product updates")
-
-    result = await mcp.get_context().elicit(
-        f"Create Your {service_name} Account", schema=AccountSignup
-    )
-
-    match result:
-        case AcceptedElicitation(data=data):
-            if not data.agree_terms:
-                return "❌ Account creation failed: You must agree to the terms of service"
-            else:
-                return f"✅ Account created successfully for {service_name}!\nUsername: {data.username}\nEmail: {data.email}"
-        case DeclinedElicitation():
-            return f"❌ Account creation for {service_name} was declined by user"
-        case CancelledElicitation():
-            return f"❌ Account creation for {service_name} was cancelled by user"
-
-
-if __name__ == "__main__":
-    logger.info("Starting account creation server...")
-    mcp.run()
-
-```
-
---- END OF FILE docs/elicitations/elicitation_account_server.py ---
-
---- START OF FILE docs/elicitations/elicitation_forms_server.py ---
-
-```py
-"""
-MCP Server for Basic Elicitation Forms Demo
-
-This server provides various elicitation resources that demonstrate
-different form types and validation patterns.
-"""
-
-import logging
-import sys
-from typing import Optional
-
-from mcp import ReadResourceResult
-from mcp.server.elicitation import (
-    AcceptedElicitation,
-    CancelledElicitation,
-    DeclinedElicitation,
-)
-from mcp.server.fastmcp import FastMCP
-from mcp.types import TextResourceContents
-from pydantic import AnyUrl, BaseModel, Field
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    stream=sys.stderr,
-)
-logger = logging.getLogger("elicitation_forms_server")
-
-# Create MCP server
-mcp = FastMCP("Elicitation Forms Demo Server", log_level="INFO")
-
-
-@mcp.resource(uri="elicitation://event-registration")
-async def event_registration() -> ReadResourceResult:
-    """Register for a tech conference event."""
-
-    class EventRegistration(BaseModel):
-        name: str = Field(description="Your full name", min_length=2, max_length=100)
-        email: str = Field(description="Your email address", json_schema_extra={"format": "email"})
-        company_website: Optional[str] = Field(
-            None, description="Your company website (optional)", json_schema_extra={"format": "uri"}
-        )
-        event_date: str = Field(
-            description="Which event date works for you?", json_schema_extra={"format": "date"}
-        )
-        dietary_requirements: Optional[str] = Field(
-            None, description="Any dietary requirements? (optional)", max_length=200
-        )
-
-    result = await mcp.get_context().elicit(
-        "Register for the fast-agent conference - fill out your details",
-        schema=EventRegistration,
-    )
-
-    match result:
-        case AcceptedElicitation(data=data):
-            lines = [
-                f"✅ Registration confirmed for {data.name}",
-                f"📧 Email: {data.email}",
-                f"🏢 Company: {data.company_website or 'Not provided'}",
-                f"📅 Event Date: {data.event_date}",
-                f"🍽️ Dietary Requirements: {data.dietary_requirements or 'None'}",
-            ]
-            response = "\n".join(lines)
-        case DeclinedElicitation():
-            response = "Registration declined - no ticket reserved"
-        case CancelledElicitation():
-            response = "Registration cancelled - please try again later"
-
-    return ReadResourceResult(
-        contents=[
-            TextResourceContents(
-                mimeType="text/plain", uri=AnyUrl("elicitation://event-registration"), text=response
-            )
-        ]
-    )
-
-
-@mcp.resource(uri="elicitation://product-review")
-async def product_review() -> ReadResourceResult:
-    """Submit a product review with rating and comments."""
-
-    class ProductReview(BaseModel):
-        rating: int = Field(description="Rate this product (1-5 stars)", ge=1, le=5)
-        satisfaction: float = Field(
-            description="Overall satisfaction score (0.0-10.0)", ge=0.0, le=10.0
-        )
-        category: str = Field(
-            description="What type of product is this?",
-            json_schema_extra={
-                "enum": ["electronics", "books", "clothing", "home", "sports"],
-                "enumNames": [
-                    "Electronics",
-                    "Books & Media",
-                    "Clothing",
-                    "Home & Garden",
-                    "Sports & Outdoors",
-                ],
-            },
-        )
-        review_text: str = Field(
-            description="Tell us about your experience", min_length=10, max_length=1000
-        )
-
-    result = await mcp.get_context().elicit(
-        "Share your product review - Help others make informed decisions!", schema=ProductReview
-    )
-
-    match result:
-        case AcceptedElicitation(data=data):
-            stars = "⭐" * data.rating
-            lines = [
-                "🎯 Product Review Submitted!",
-                f"⭐ Rating: {stars} ({data.rating}/5)",
-                f"📊 Satisfaction: {data.satisfaction}/10.0",
-                f"📦 Category: {data.category.replace('_', ' ').title()}",
-                f"💬 Review: {data.review_text}",
-            ]
-            response = "\n".join(lines)
-        case DeclinedElicitation():
-            response = "Review declined - no feedback submitted"
-        case CancelledElicitation():
-            response = "Review cancelled - you can submit it later"
-
-    return ReadResourceResult(
-        contents=[
-            TextResourceContents(
-                mimeType="text/plain", uri=AnyUrl("elicitation://product-review"), text=response
-            )
-        ]
-    )
-
-
-@mcp.resource(uri="elicitation://account-settings")
-async def account_settings() -> ReadResourceResult:
-    """Configure your account settings and preferences."""
-
-    class AccountSettings(BaseModel):
-        email_notifications: bool = Field(True, description="Receive email notifications?")
-        marketing_emails: bool = Field(False, description="Subscribe to marketing emails?")
-        theme: str = Field(
-            description="Choose your preferred theme",
-            json_schema_extra={
-                "enum": ["light", "dark", "auto"],
-                "enumNames": ["Light Theme", "Dark Theme", "Auto (System)"],
-            },
-        )
-        privacy_public: bool = Field(False, description="Make your profile public?")
-        items_per_page: int = Field(description="Items to show per page (10-100)", ge=10, le=100)
-
-    result = await mcp.get_context().elicit("Update your account settings", schema=AccountSettings)
-
-    match result:
-        case AcceptedElicitation(data=data):
-            lines = [
-                "⚙️ Account Settings Updated!",
-                f"📧 Email notifications: {'On' if data.email_notifications else 'Off'}",
-                f"📬 Marketing emails: {'On' if data.marketing_emails else 'Off'}",
-                f"🎨 Theme: {data.theme.title()}",
-                f"👥 Public profile: {'Yes' if data.privacy_public else 'No'}",
-                f"📄 Items per page: {data.items_per_page}",
-            ]
-            response = "\n".join(lines)
-        case DeclinedElicitation():
-            response = "Settings unchanged - keeping current preferences"
-        case CancelledElicitation():
-            response = "Settings update cancelled"
-
-    return ReadResourceResult(
-        contents=[
-            TextResourceContents(
-                mimeType="text/plain", uri=AnyUrl("elicitation://account-settings"), text=response
-            )
-        ]
-    )
-
-
-@mcp.resource(uri="elicitation://service-appointment")
-async def service_appointment() -> ReadResourceResult:
-    """Schedule a car service appointment."""
-
-    class ServiceAppointment(BaseModel):
-        customer_name: str = Field(description="Your full name", min_length=2, max_length=50)
-        vehicle_type: str = Field(
-            description="What type of vehicle do you have?",
-            json_schema_extra={
-                "enum": ["sedan", "suv", "truck", "motorcycle", "other"],
-                "enumNames": ["Sedan", "SUV/Crossover", "Truck", "Motorcycle", "Other"],
-            },
-        )
-        needs_loaner: bool = Field(description="Do you need a loaner vehicle?")
-        appointment_time: str = Field(
-            description="Preferred appointment date and time",
-            json_schema_extra={"format": "date-time"},
-        )
-        priority_service: bool = Field(False, description="Is this an urgent repair?")
-
-    result = await mcp.get_context().elicit(
-        "Schedule your vehicle service appointment", schema=ServiceAppointment
-    )
-
-    match result:
-        case AcceptedElicitation(data=data):
-            lines = [
-                "🔧 Service Appointment Scheduled!",
-                f"👤 Customer: {data.customer_name}",
-                f"🚗 Vehicle: {data.vehicle_type.title()}",
-                f"🚙 Loaner needed: {'Yes' if data.needs_loaner else 'No'}",
-                f"📅 Appointment: {data.appointment_time}",
-                f"⚡ Priority service: {'Yes' if data.priority_service else 'No'}",
-            ]
-            response = "\n".join(lines)
-        case DeclinedElicitation():
-            response = "Appointment cancelled - call us when you're ready!"
-        case CancelledElicitation():
-            response = "Appointment scheduling cancelled"
-
-    return ReadResourceResult(
-        contents=[
-            TextResourceContents(
-                mimeType="text/plain",
-                uri=AnyUrl("elicitation://service-appointment"),
-                text=response,
-            )
-        ]
-    )
-
-
-if __name__ == "__main__":
-    logger.info("Starting elicitation forms demo server...")
-    mcp.run()
-
-```
-
---- END OF FILE docs/elicitations/elicitation_forms_server.py ---
-
---- START OF FILE docs/elicitations/elicitation_game_server.py ---
-
-```py
-"""
-MCP Server for Game Character Creation
-
-This server provides a fun game character creation form
-that can be used with custom handlers.
-"""
-
-import logging
-import random
-import sys
-
-from mcp import ReadResourceResult
-from mcp.server.elicitation import (
-    AcceptedElicitation,
-    CancelledElicitation,
-    DeclinedElicitation,
-)
-from mcp.server.fastmcp import FastMCP
-from mcp.types import TextResourceContents
-from pydantic import AnyUrl, BaseModel, Field
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    stream=sys.stderr,
-)
-logger = logging.getLogger("elicitation_game_server")
-
-# Create MCP server
-mcp = FastMCP("Game Character Creation Server", log_level="INFO")
-
-
-@mcp.resource(uri="elicitation://game-character")
-async def game_character() -> ReadResourceResult:
-    """Fun game character creation form for the whimsical example."""
-
-    class GameCharacter(BaseModel):
-        character_name: str = Field(description="Name your character", min_length=2, max_length=30)
-        character_class: str = Field(
-            description="Choose your class",
-            json_schema_extra={
-                "enum": ["warrior", "mage", "rogue", "ranger", "paladin", "bard"],
-                "enumNames": [
-                    "⚔️ Warrior",
-                    "🔮 Mage",
-                    "🗡️ Rogue",
-                    "🏹 Ranger",
-                    "🛡️ Paladin",
-                    "🎵 Bard",
-                ],
-            },
-        )
-        strength: int = Field(description="Strength (3-18)", ge=3, le=18, default=10)
-        intelligence: int = Field(description="Intelligence (3-18)", ge=3, le=18, default=10)
-        dexterity: int = Field(description="Dexterity (3-18)", ge=3, le=18, default=10)
-        charisma: int = Field(description="Charisma (3-18)", ge=3, le=18, default=10)
-        lucky_dice: bool = Field(False, description="Roll for a lucky bonus?")
-
-    result = await mcp.get_context().elicit("🎮 Create Your Game Character!", schema=GameCharacter)
-
-    match result:
-        case AcceptedElicitation(data=data):
-            lines = [
-                f"🎭 Character Created: {data.character_name}",
-                f"Class: {data.character_class.title()}",
-                f"Stats: STR:{data.strength} INT:{data.intelligence} DEX:{data.dexterity} CHA:{data.charisma}",
-            ]
-
-            if data.lucky_dice:
-                dice_roll = random.randint(1, 20)
-                if dice_roll >= 15:
-                    bonus = random.choice(
-                        [
-                            "🎁 Lucky! +2 to all stats!",
-                            "🌟 Critical! Found a magic item!",
-                            "💰 Jackpot! +100 gold!",
-                        ]
-                    )
-                    lines.append(f"🎲 Dice Roll: {dice_roll} - {bonus}")
-                else:
-                    lines.append(f"🎲 Dice Roll: {dice_roll} - No bonus this time!")
-
-            total_stats = data.strength + data.intelligence + data.dexterity + data.charisma
-            if total_stats > 50:
-                lines.append("💪 Powerful character build!")
-            elif total_stats < 30:
-                lines.append("🎯 Challenging build - good luck!")
-
-            response = "\n".join(lines)
-        case DeclinedElicitation():
-            response = "Character creation declined - returning to menu"
-        case CancelledElicitation():
-            response = "Character creation cancelled"
-
-    return ReadResourceResult(
-        contents=[
-            TextResourceContents(
-                mimeType="text/plain", uri=AnyUrl("elicitation://game-character"), text=response
-            )
-        ]
-    )
-
-
-@mcp.tool()
-async def roll_new_character(campaign_name: str = "Adventure") -> str:
-    """
-    Roll a new character for your campaign.
-
-    Args:
-        campaign_name: The name of the campaign
-
-    Returns:
-        Character details or status message
-    """
-
-    class GameCharacter(BaseModel):
-        character_name: str = Field(description="Name your character", min_length=2, max_length=30)
-        character_class: str = Field(
-            description="Choose your class",
-            json_schema_extra={
-                "enum": ["warrior", "mage", "rogue", "ranger", "paladin", "bard"],
-                "enumNames": [
-                    "⚔️ Warrior",
-                    "🔮 Mage",
-                    "🗡️ Rogue",
-                    "🏹 Ranger",
-                    "🛡️ Paladin",
-                    "🎵 Bard",
-                ],
-            },
-        )
-        strength: int = Field(description="Strength (3-18)", ge=3, le=18, default=10)
-        intelligence: int = Field(description="Intelligence (3-18)", ge=3, le=18, default=10)
-        dexterity: int = Field(description="Dexterity (3-18)", ge=3, le=18, default=10)
-        charisma: int = Field(description="Charisma (3-18)", ge=3, le=18, default=10)
-        lucky_dice: bool = Field(False, description="Roll for a lucky bonus?")
-
-    result = await mcp.get_context().elicit(
-        f"🎮 Create Character for {campaign_name}!", schema=GameCharacter
-    )
-
-    match result:
-        case AcceptedElicitation(data=data):
-            response = f"🎭 {data.character_name} the {data.character_class.title()} joins {campaign_name}!\n"
-            response += f"Stats: STR:{data.strength} INT:{data.intelligence} DEX:{data.dexterity} CHA:{data.charisma}"
-
-            if data.lucky_dice:
-                dice_roll = random.randint(1, 20)
-                if dice_roll >= 15:
-                    response += f"\n🎲 Lucky roll ({dice_roll})! Starting with bonus equipment!"
-                else:
-                    response += f"\n🎲 Rolled {dice_roll} - Standard starting gear."
-
-            return response
-        case DeclinedElicitation():
-            return f"Character creation for {campaign_name} was declined"
-        case CancelledElicitation():
-            return f"Character creation for {campaign_name} was cancelled"
-
-
-if __name__ == "__main__":
-    logger.info("Starting game character creation server...")
-    mcp.run()
-
-```
-
---- END OF FILE docs/elicitations/elicitation_game_server.py ---
-
---- START OF FILE docs/elicitations/fastagent.config.yaml ---
-
-```yaml
-# Model string takes format:
-#   <provider>.<model_string>.<reasoning_effort?> (e.g. anthropic.claude-3-5-sonnet-20241022 or openai.o3-mini.low)
-#
-# Can be overriden with a command line switch --model=<model>, or within the Agent decorator.
-# Check here for current details: https://fast-agent.ai/models/
-default_model: "passthrough"
-
-# Logging and Console Configuration
-logger:
-  level: "error"
-  type: "console"
-
-# MCP Server Configuration
-mcp:
-  servers:
-    # Forms demo server - interactive form examples
-    elicitation_forms_server:
-      command: "uv"
-      args: ["run", "elicitation_forms_server.py"]
-      elicitation:
-        mode: "forms" # Shows forms to users (default)
-
-    # Account creation server - for CALL_TOOL demos
-    elicitation_account_server:
-      command: "uv"
-      args: ["run", "elicitation_account_server.py"]
-      elicitation:
-        mode: "forms"
-
-    # Game character server - for custom handler demos
-    elicitation_game_server:
-      command: "uv"
-      args: ["run", "elicitation_game_server.py"]
-      elicitation:
-        mode: "forms"
-
-```
-
---- END OF FILE docs/elicitations/fastagent.config.yaml ---
-
---- START OF FILE docs/elicitations/fastagent.secrets.yaml.example ---
-
-```example
-# Secrets configuration for elicitation examples
-#
-# Rename this file to fastagent.secrets.yaml and add your API keys
-# to use the account_creation.py example with real LLMs
-
-# OpenAI
-openai_api_key: "sk-..."
-
-# Anthropic
-anthropic_api_key: "sk-ant-..."
-
-# Google (Gemini)
-google_api_key: "..."
-
-# Other providers - see documentation for full list
-# groq_api_key: "..."
-# mistral_api_key: "..."
-```
-
---- END OF FILE docs/elicitations/fastagent.secrets.yaml.example ---
-
---- START OF FILE docs/elicitations/forms_demo.py ---
-
-```py
-"""
-Quick Start: Elicitation Forms Demo
-
-This example demonstrates the elicitation forms feature of fast-agent.
-
-When Read Resource requests are sent to the MCP Server, it generates an Elicitation
-which creates a form for the user to fill out.
-The results are returned to the demo program which prints out the results in a rich format.
-"""
-
-import asyncio
-
-from rich.console import Console
-from rich.panel import Panel
-
-from mcp_agent.core.fastagent import FastAgent
-from mcp_agent.mcp.helpers.content_helpers import get_resource_text
-
-fast = FastAgent("Elicitation Forms Demo", quiet=True)
-console = Console()
-
-
-@fast.agent(
-    "forms-demo",
-    servers=[
-        "elicitation_forms_server",
-    ],
-)
-async def main():
-    """Run the improved forms demo showcasing all elicitation features."""
-    async with fast.run() as agent:
-        console.print("\n[bold cyan]Welcome to the Elicitation Forms Demo![/bold cyan]\n")
-        console.print("This demo shows how to collect structured data using MCP Elicitations.")
-        console.print("We'll present several forms and display the results collected for each.\n")
-
-        # Example 1: Event Registration
-        console.print("[bold yellow]Example 1: Event Registration Form[/bold yellow]")
-        console.print(
-            "[dim]Demonstrates: string validation, email format, URL format, date format[/dim]"
-        )
-        result = await agent.get_resource("elicitation://event-registration")
-
-        if result_text := get_resource_text(result):
-            panel = Panel(
-                result_text,
-                title="🎫 Registration Confirmation",
-                border_style="green",
-                expand=False,
-            )
-            console.print(panel)
-        else:
-            console.print("[red]No registration data received[/red]")
-
-        console.print("\n" + "─" * 50 + "\n")
-
-        # Example 2: Product Review
-        console.print("[bold yellow]Example 2: Product Review Form[/bold yellow]")
-        console.print(
-            "[dim]Demonstrates: number validation (range), radio selection, multiline text[/dim]"
-        )
-        result = await agent.get_resource("elicitation://product-review")
-
-        if result_text := get_resource_text(result):
-            review_panel = Panel(
-                result_text, title="🛍️ Product Review", border_style="cyan", expand=False
-            )
-            console.print(review_panel)
-
-        console.print("\n" + "─" * 50 + "\n")
-
-        # Example 3: Account Settings
-        console.print("[bold yellow]Example 3: Account Settings Form[/bold yellow]")
-        console.print(
-            "[dim]Demonstrates: boolean selections, radio selection, number validation[/dim]"
-        )
-        result = await agent.get_resource("elicitation://account-settings")
-
-        if result_text := get_resource_text(result):
-            settings_panel = Panel(
-                result_text, title="⚙️ Account Settings", border_style="blue", expand=False
-            )
-            console.print(settings_panel)
-
-        console.print("\n" + "─" * 50 + "\n")
-
-        # Example 4: Service Appointment
-        console.print("[bold yellow]Example 4: Service Appointment Booking[/bold yellow]")
-        console.print(
-            "[dim]Demonstrates: string validation, radio selection, boolean, datetime format[/dim]"
-        )
-        result = await agent.get_resource("elicitation://service-appointment")
-
-        if result_text := get_resource_text(result):
-            appointment_panel = Panel(
-                result_text, title="🔧 Appointment Confirmed", border_style="magenta", expand=False
-            )
-            console.print(appointment_panel)
-
-        console.print("\n[bold green]✅ Demo Complete![/bold green]")
-        console.print("\n[bold cyan]Features Demonstrated:[/bold cyan]")
-        console.print("• [green]String validation[/green] (min/max length)")
-        console.print("• [green]Number validation[/green] (range constraints)")
-        console.print("• [green]Radio selections[/green] (enum dropdowns)")
-        console.print("• [green]Boolean selections[/green] (checkboxes)")
-        console.print("• [green]Format validation[/green] (email, URL, date, datetime)")
-        console.print("• [green]Multiline text[/green] (expandable text areas)")
-        console.print("\nThese forms demonstrate natural, user-friendly data collection patterns!")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-```
-
---- END OF FILE docs/elicitations/forms_demo.py ---
-
---- START OF FILE docs/elicitations/game_character.py ---
-
-```py
-#!/usr/bin/env python3
-"""
-Demonstration of Custom Elicitation Handler
-
-This example demonstrates a custom elicitation handler that creates
-an interactive game character creation experience with dice rolls,
-visual gauges, and fun interactions.
-"""
-
-import asyncio
-
-# Import our custom handler from the separate module
-from game_character_handler import game_character_elicitation_handler
-from rich.console import Console
-from rich.panel import Panel
-
-from mcp_agent.core.fastagent import FastAgent
-from mcp_agent.mcp.helpers.content_helpers import get_resource_text
-
-fast = FastAgent("Game Character Creator", quiet=True)
-console = Console()
-
-
-@fast.agent(
-    "character-creator",
-    servers=["elicitation_game_server"],
-    # Register our handler from game_character_handler.py
-    elicitation_handler=game_character_elicitation_handler,
-)
-async def main():
-    """Run the game character creator with custom elicitation handler."""
-    async with fast.run() as agent:
-        console.print(
-            Panel(
-                "[bold cyan]Welcome to the Character Creation Studio![/bold cyan]\n\n"
-                "Create your hero with our magical character generator.\n"
-                "Watch as the cosmic dice determine your fate!",
-                title="🎮 Game Time 🎮",
-                border_style="magenta",
-            )
-        )
-
-        # Trigger the character creation
-        result = await agent.get_resource("elicitation://game-character")
-
-        if result_text := get_resource_text(result):
-            character_panel = Panel(
-                result_text, title="📜 Your Character 📜", border_style="green", expand=False
-            )
-            console.print(character_panel)
-
-            console.print("\n[italic]Your character is ready for adventure![/italic]")
-            console.print("[dim]The tavern door opens, and your journey begins...[/dim]\n")
-
-            # Fun ending based on character
-            if "Powerful character" in result_text:
-                console.print("⚔️  [bold]The realm trembles at your might![/bold]")
-            elif "Challenging build" in result_text:
-                console.print("🎯 [bold]True heroes are forged through adversity![/bold]")
-            else:
-                console.print("🗡️  [bold]Your legend begins now![/bold]")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-```
-
---- END OF FILE docs/elicitations/game_character.py ---
-
---- START OF FILE docs/elicitations/game_character_handler.py ---
-
-```py
-"""
-Custom Elicitation Handler for Game Character Creation
-
-This module provides a whimsical custom elicitation handler that creates
-an interactive game character creation experience with dice rolls,
-visual gauges, and animated effects.
-"""
-
-import asyncio
-import random
-from typing import TYPE_CHECKING, Any, Dict
-
-from mcp.shared.context import RequestContext
-from mcp.types import ElicitRequestParams, ElicitResult
-from rich.console import Console
-from rich.progress import BarColumn, Progress, TextColumn
-from rich.prompt import Confirm
-from rich.table import Table
-
-from mcp_agent.logging.logger import get_logger
-
-if TYPE_CHECKING:
-    from mcp import ClientSession
-
-logger = get_logger(__name__)
-console = Console()
-
-
-async def game_character_elicitation_handler(
-    context: RequestContext["ClientSession", Any],
-    params: ElicitRequestParams,
-) -> ElicitResult:
-    """Custom handler that creates an interactive character creation experience."""
-    logger.info(f"Game character elicitation handler called: {params.message}")
-
-    if params.requestedSchema:
-        properties = params.requestedSchema.get("properties", {})
-        content: Dict[str, Any] = {}
-
-        console.print("\n[bold magenta]🎮 Character Creation Studio 🎮[/bold magenta]\n")
-
-        # Character name with typewriter effect
-        if "character_name" in properties:
-            console.print("[cyan]✨ Generating your character's name...[/cyan] ", end="")
-            name_prefixes = ["Hero", "Legend", "Epic", "Mighty", "Brave", "Noble"]
-            name_suffixes = ["blade", "heart", "storm", "fire", "shadow", "star"]
-
-            name = f"{random.choice(name_prefixes)}{random.choice(name_suffixes)}{random.randint(1, 999)}"
-
-            for char in name:
-                console.print(char, end="", style="bold green")
-                await asyncio.sleep(0.03)
-            console.print("\n")
-            content["character_name"] = name
-
-        # Class selection with visual menu and fate dice
-        if "character_class" in properties:
-            class_enum = properties["character_class"].get("enum", [])
-            class_names = properties["character_class"].get("enumNames", class_enum)
-
-            table = Table(title="🎯 Choose Your Destiny", show_header=False, box=None)
-            table.add_column("Option", style="cyan", width=8)
-            table.add_column("Class", style="yellow", width=20)
-            table.add_column("Description", style="dim", width=30)
-
-            descriptions = [
-                "Master of sword and shield",
-                "Wielder of arcane mysteries",
-                "Silent shadow striker",
-                "Nature's deadly archer",
-                "Holy warrior of light",
-                "Inspiring magical performer",
-            ]
-
-            for i, (cls, name, desc) in enumerate(zip(class_enum, class_names, descriptions)):
-                table.add_row(f"[{i + 1}]", name, desc)
-
-            console.print(table)
-
-            # Dramatic fate dice roll
-            console.print("\n[bold yellow]🎲 The Fates decide your path...[/bold yellow]")
-            for _ in range(8):
-                dice_face = random.choice(["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"])
-                console.print(f"\r  Rolling... {dice_face}", end="")
-                await asyncio.sleep(0.2)
-
-            fate_roll = random.randint(1, 6)
-            selected_idx = (fate_roll - 1) % len(class_enum)
-            console.print(f"\n  🎲 Fate dice: [bold red]{fate_roll}[/bold red]!")
-            console.print(
-                f"✨ Destiny has chosen: [bold yellow]{class_names[selected_idx]}[/bold yellow]!\n"
-            )
-            content["character_class"] = class_enum[selected_idx]
-
-        # Stats rolling with animated progress bars and cosmic effects
-        stat_names = ["strength", "intelligence", "dexterity", "charisma"]
-        stats_info = {
-            "strength": {"emoji": "💪", "desc": "Physical power"},
-            "intelligence": {"emoji": "🧠", "desc": "Mental acuity"},
-            "dexterity": {"emoji": "🏃", "desc": "Agility & speed"},
-            "charisma": {"emoji": "✨", "desc": "Personal magnetism"},
-        }
-
-        console.print("[bold]🌟 Rolling cosmic dice for your abilities...[/bold]\n")
-
-        with Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(bar_width=25, style="cyan", complete_style="green"),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            console=console,
-        ) as progress:
-            for stat in stat_names:
-                if stat in properties:
-                    # Roll 3d6 for classic D&D feel with bonus potential
-                    rolls = [random.randint(1, 6) for _ in range(3)]
-                    total = sum(rolls)
-
-                    # Add cosmic bonus chance
-                    if random.random() < 0.15:  # 15% chance for cosmic boost
-                        cosmic_bonus = random.randint(1, 3)
-                        total = min(18, total + cosmic_bonus)
-                        cosmic_text = f" ✨+{cosmic_bonus} COSMIC✨"
-                    else:
-                        cosmic_text = ""
-
-                    stat_info = stats_info.get(stat, {"emoji": "📊", "desc": stat.title()})
-                    task = progress.add_task(
-                        f"{stat_info['emoji']} {stat.capitalize()}: {stat_info['desc']}", total=18
-                    )
-
-                    # Animate the progress bar with suspense
-                    for i in range(total + 1):
-                        progress.update(task, completed=i)
-                        await asyncio.sleep(0.04)
-
-                    content[stat] = total
-                    console.print(
-                        f"   🎲 Rolled: {rolls} = [bold green]{total}[/bold green]{cosmic_text}"
-                    )
-
-        # Lucky dice legendary challenge
-        if "lucky_dice" in properties:
-            console.print("\n" + "=" * 60)
-            console.print("[bold yellow]🎰 LEGENDARY CHALLENGE: Lucky Dice! 🎰[/bold yellow]")
-            console.print("The ancient dice of fortune whisper your name...")
-            console.print("Do you dare tempt fate for legendary power?")
-            console.print("=" * 60)
-
-            # Epic dice rolling sequence
-            console.print("\n[cyan]🌟 Rolling the Dice of Destiny...[/cyan]")
-
-            for i in range(15):
-                dice_faces = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"]
-                d20_faces = ["🎲"] * 19 + ["💎"]  # Special diamond for 20
-
-                if i < 10:
-                    face = random.choice(dice_faces)
-                else:
-                    face = random.choice(d20_faces)
-
-                console.print(f"\r  [bold]{face}[/bold] Rolling...", end="")
-                await asyncio.sleep(0.15)
-
-            final_roll = random.randint(1, 20)
-
-            if final_roll == 20:
-                console.print("\r  [bold red]💎 NATURAL 20! 💎[/bold red]")
-                console.print("  [bold green]🌟 LEGENDARY SUCCESS! 🌟[/bold green]")
-                console.print("  [gold1]You have been blessed by the gods themselves![/gold1]")
-                bonus_text = "🏆 Divine Champion status unlocked!"
-            elif final_roll >= 18:
-                console.print(f"\r  [bold yellow]⭐ {final_roll} - EPIC ROLL! ⭐[/bold yellow]")
-                bonus_text = "🎁 Epic treasure discovered!"
-            elif final_roll >= 15:
-                console.print(f"\r  [green]🎲 {final_roll} - Great success![/green]")
-                bonus_text = "🌟 Rare magical item found!"
-            elif final_roll >= 10:
-                console.print(f"\r  [yellow]🎲 {final_roll} - Good fortune.[/yellow]")
-                bonus_text = "🗡️ Modest blessing received."
-            elif final_roll == 1:
-                console.print("\r  [bold red]💀 CRITICAL FUMBLE! 💀[/bold red]")
-                bonus_text = "😅 Learning experience gained... try again!"
-            else:
-                console.print(f"\r  [dim]🎲 {final_roll} - The dice are silent.[/dim]")
-                bonus_text = "🎯 Your destiny remains unwritten."
-
-            console.print(f"  [italic]{bonus_text}[/italic]")
-            content["lucky_dice"] = final_roll >= 10
-
-        # Epic character summary with theatrical flair
-        console.print("\n" + "=" * 70)
-        console.print("[bold cyan]📜 Your Character Has Been Rolled! 📜[/bold cyan]")
-        console.print("=" * 70)
-
-        # Show character summary
-        total_stats = sum(content.get(stat, 10) for stat in stat_names if stat in content)
-
-        # Create a simple table
-        stats_table = Table(show_header=False, box=None)
-        stats_table.add_column("Label", style="cyan", width=15)
-        stats_table.add_column("Value", style="bold white")
-
-        if "character_name" in content:
-            stats_table.add_row("Name:", content["character_name"])
-        if "character_class" in content:
-            class_idx = class_enum.index(content["character_class"])
-            stats_table.add_row("Class:", class_names[class_idx])
-
-        stats_table.add_row("", "")  # Empty row for spacing
-
-        # Add stats
-        for stat in stat_names:
-            if stat in content:
-                stat_label = f"{stat.capitalize()}:"
-                stats_table.add_row(stat_label, str(content[stat]))
-
-        stats_table.add_row("", "")
-        stats_table.add_row("Total Power:", str(total_stats))
-
-        console.print(stats_table)
-
-        # Power message
-        if total_stats > 60:
-            console.print("✨ [bold gold1]The realm trembles before your might![/bold gold1] ✨")
-        elif total_stats > 50:
-            console.print("⚔️ [bold green]A formidable hero rises![/bold green] ⚔️")
-        elif total_stats < 35:
-            console.print("🎯 [bold blue]The underdog's tale begins![/bold blue] 🎯")
-        else:
-            console.print("🗡️ [bold white]Adventure awaits the worthy![/bold white] 🗡️")
-
-        # Ask for confirmation
-        console.print("\n[bold yellow]Do you accept this character?[/bold yellow]")
-        console.print("[dim]Press Enter to accept, 'n' to decline, or Ctrl+C to cancel[/dim]\n")
-
-        try:
-            accepted = Confirm.ask("Accept character?", default=True)
-
-            if accepted:
-                console.print(
-                    "\n[bold green]✅ Character accepted! Your adventure begins![/bold green]"
-                )
-                return ElicitResult(action="accept", content=content)
-            else:
-                console.print(
-                    "\n[yellow]❌ Character declined. The fates will roll again...[/yellow]"
-                )
-                return ElicitResult(action="decline")
-        except KeyboardInterrupt:
-            console.print("\n[red]❌ Character creation cancelled![/red]")
-            return ElicitResult(action="cancel")
-
-    else:
-        # No schema, return a fun message
-        content = {"response": "⚔️ Ready for adventure! ⚔️"}
-        return ElicitResult(action="accept", content=content)
-
-```
-
---- END OF FILE docs/elicitations/game_character_handler.py ---
-
---- START OF FILE docs/elicitations/tool_call.py ---
-
-```py
-import asyncio
-
-from mcp_agent.core.fastagent import FastAgent
-
-# Create the application
-fast = FastAgent("fast-agent example")
-
-
-# Define the agent
-@fast.agent(
-    instruction="You are a helpful AI Agent",
-    servers=["elicitation_account_server"],
-)
-async def main():
-    # use the --model command line switch or agent arguments to change model
-    async with fast.run() as agent:
-        await agent.send('***CALL_TOOL create_user_account {"service_name": "fast-agent"}')
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
-```
-
---- END OF FILE docs/elicitations/tool_call.py ---
 
 --- START OF FILE docs/README.md ---
 
@@ -1596,14 +595,14 @@ mcp:
 --- START OF FILE main.py ---
 
 ```py
+
 # main.py
 import asyncio
-import sys
 import argparse
 
 from model import Model
-from view import View
-from controller import Controller, ExitCommand, SwitchAgentCommand
+from textual_view import AgentDashboardApp  # <-- Import the new Textual view
+from controller import Controller, SwitchAgentCommand
 from agent_definitions import get_agent, list_available_agents
 
 def print_shutdown_message():
@@ -1621,69 +620,84 @@ def parse_arguments():
     )
     return parser.parse_args()
 
-async def run_agent_session(agent_name: str):
+class Application:
     """
-    Run a session with a specific agent.
-    
-    Args:
-        agent_name: The name of the agent to run
-        
-    Returns:
-        The new agent name if switching, None if exiting
+    Manages the application's lifecycle and state.
+    Handles agent sessions and switching between agents.
     """
-    try:
-        # Get the selected agent from the registry
-        selected_agent = get_agent(agent_name)
-        print(f"Starting {agent_name} agent...")
+    def __init__(self, initial_agent_name: str):
+        self.current_agent_name = initial_agent_name
+        # Future extensibility: Add persistent state here
+        # self.global_preferences = {}
+        # self.session_history = []
+
+    async def run(self):
+        """The main application loop that handles agent sessions and switching."""
+        while self.current_agent_name is not None:
+            next_agent = await self._run_single_session(self.current_agent_name)
+            if next_agent:
+                print(f"\nSwitching to {next_agent} agent...")
+                await asyncio.sleep(0.1)  # Brief pause for visual feedback
+                self.current_agent_name = next_agent
+            else:
+                self.current_agent_name = None
+
+        # This delay happens AFTER all agents have closed, giving background
+        # tasks time to finalize their shutdown before the script terminates.
+        await asyncio.sleep(0.1)
+
+    async def _run_single_session(self, agent_name: str) -> str | None:
+        """
+        Run a session with a specific agent using the Textual UI.
         
-        # Run the selected agent
-        async with selected_agent.run() as agent_app:
-            # Initialize MVC components
-            model = Model()
-            controller = Controller(model, agent_app)
-            view = View(model, controller)
+        Args:
+            agent_name: The name of the agent to run
             
-            # Run the main loop until exit or switch
-            await view.run_main_loop()
-            return None  # Normal exit
+        Returns:
+            The new agent name if switching, None if exiting.
+        """
+        try:
+            selected_agent = get_agent(agent_name)
+            print(f"Starting {agent_name} agent...")
             
-    except SwitchAgentCommand as e:
-        return e.agent_name  # Switch to new agent
-    except KeyError as e:
-        print(f"Error: {e}")
-        print(f"Available agents: {', '.join(list_available_agents())}")
-        return None
+            async with selected_agent.run() as agent_app:
+                model = Model()
+                controller = Controller(model, agent_app)
+                
+                # Instantiate and run the Textual app
+                tui_app = AgentDashboardApp(model, controller, agent_name=agent_name)
+                
+                # The `run_async` method is blocking. It will return a result when
+                # the app calls `self.exit(result=...)`.
+                switch_to_agent = await tui_app.run_async()
+                
+                # If the app exited with a result, it's the name of the new agent.
+                return switch_to_agent
+
+        except SwitchAgentCommand as e:
+            return e.agent_name
+        except KeyError as e:
+            print(f"Error: {e}")
+            print(f"Available agents: {', '.join(list_available_agents())}")
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            return None
 
 async def main():
-    """
-    The main entry point for the application.
-    """
-    # Parse command line arguments
+    """The main entry point for the application."""
     args = parse_arguments()
-    current_agent = args.agent
-    
-    # Main agent loop - handles switching between agents
-    while current_agent is not None:
-        current_agent = await run_agent_session(current_agent)
-        if current_agent:
-            print(f"\nSwitching to {current_agent} agent...")
-            # Small delay to show the switch message
-            await asyncio.sleep(0.5)
-
-    # This delay happens AFTER all agents have closed, giving background
-    # tasks time to finalize their shutdown before the script terminates.
-    await asyncio.sleep(0.1)
-
+    app = Application(initial_agent_name=args.agent)
+    await app.run()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        # We no longer catch SystemExit here, but keep it for robustness.
         pass
     finally:
-        # The final message is printed after everything has shut down.
         print_shutdown_message()
+
 ```
 
 --- END OF FILE main.py ---
@@ -1695,19 +709,52 @@ if __name__ == "__main__":
 import asyncio
 import json
 import os
+from abc import ABC
 from datetime import datetime
-from enum import Enum, auto
 from typing import Callable, List, Optional
 
 # Core types from the fast-agent framework.
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
 
-class AppState(Enum):
-    """Defines the possible states of the client application."""
-    IDLE = auto()
-    AGENT_IS_THINKING = auto()
-    WAITING_FOR_USER_INPUT = auto()
-    ERROR = auto()
+# --- Persistence Service Functions ---
+async def save_history(history: list[PromptMessageMultipart], filepath: str) -> bool:
+    """Saves conversation history to a file."""
+    try:
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
+        serializable_history = [
+            message.model_dump(mode='json') for message in history
+        ]
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(serializable_history, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+async def load_history(filepath: str) -> list[PromptMessageMultipart]:
+    """Loads conversation history from a file."""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            raw_history = json.load(f)
+        # Re-create the rich PromptMessageMultipart objects from the raw dicts.
+        return [PromptMessageMultipart(**data) for data in raw_history]
+    except (FileNotFoundError, json.JSONDecodeError, TypeError):
+        return []
+
+# --- State Pattern Implementation ---
+class IAppState(ABC):
+    """An abstract base class for application states. Serves as a marker."""
+    pass
+
+class IdleState(IAppState): 
+    pass
+
+class AgentIsThinkingState(IAppState): 
+    pass
+
+class ErrorState(IAppState): 
+    pass
 
 class Model:
     """
@@ -1719,7 +766,7 @@ class Model:
         # --- State Data ---
         self.session_id: str = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.conversation_history: List[PromptMessageMultipart] = []
-        self.application_state: AppState = AppState.IDLE
+        self.application_state: IAppState = IdleState()
         self.last_error_message: Optional[str] = None
         self.last_success_message: Optional[str] = None
         
@@ -1775,59 +822,16 @@ class Model:
         self.conversation_history = []
         await self._notify_listeners()
 
-    async def set_state(self, new_state: AppState, error_message: Optional[str] = None, success_message: Optional[str] = None):
+    async def set_state(self, new_state: IAppState, error_message: Optional[str] = None, success_message: Optional[str] = None):
         """Updates the application's current state and notifies listeners."""
         self.application_state = new_state
-        if new_state == AppState.ERROR:
+        if isinstance(new_state, ErrorState):
             self.last_error_message = error_message
             self.last_success_message = None
         else:
             self.last_error_message = None # Clear error on non-error states.
             self.last_success_message = success_message
         await self._notify_listeners()
-
-    async def load_history_from_file(self, filepath: str) -> bool:
-        """
-        Loads conversation history from a JSON file, replacing the current history.
-        Returns True on success, False on failure.
-        """
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                raw_history = json.load(f)
-            # Re-create the rich PromptMessageMultipart objects from the raw dicts.
-            self.conversation_history = [
-                PromptMessageMultipart(**data) for data in raw_history
-            ]
-            await self._notify_listeners()
-            return True
-        except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
-            # We don't change state on failure, just report it.
-            await self.set_state(AppState.ERROR, f"Failed to load history: {e}")
-            return False
-
-    # --- Methods for Actions (Instructed by the Controller) ---
-
-    async def save_history_to_file(self, filepath: Optional[str] = None) -> bool:
-        """
-        Saves the current conversation history to a specified JSON file.
-        This method does not mutate the model's state.
-        Returns True on success, False on failure.
-        """
-        target_filepath = filepath or self.user_preferences["auto_save_filename"]
-        context_dir = self._get_context_dir()
-        os.makedirs(context_dir, exist_ok=True)
-
-        try:
-            serializable_history = [
-                message.model_dump(mode='json') for message in self.conversation_history
-            ]
-            with open(target_filepath, 'w', encoding='utf-8') as f:
-                json.dump(serializable_history, f, indent=2, ensure_ascii=False)
-            return True
-        except Exception:
-            # If saving fails, we set an error state to inform the user.
-            await self.set_state(AppState.ERROR, f"Could not write to file {target_filepath}")
-            return False
 ```
 
 --- END OF FILE model.py ---
@@ -2501,6 +1505,176 @@ async def test_user_preferences():
 ```
 
 --- END OF FILE tests/test_model.py ---
+
+--- START OF FILE textual_view.py ---
+
+```py
+# textual_view.py
+from typing import TYPE_CHECKING
+
+from rich.text import Text
+from textual import on
+from textual.app import App, ComposeResult
+from textual.widgets import Footer, Header, Input, RichLog
+
+from controller import ExitCommand, SwitchAgentCommand
+from model import IdleState, AgentIsThinkingState, ErrorState, Model
+
+if TYPE_CHECKING:
+    from controller import Controller
+
+class AgentDashboardApp(App):
+    """The Textual-based user interface for the agent dashboard."""
+
+    CSS = """
+    Screen {
+        background: $surface;
+    }
+    #chat-log {
+        margin: 1 2;
+        border: round $primary;
+        background: $panel;
+    }
+    Input {
+        dock: bottom;
+        margin: 0 1 1 1;
+    }
+    """
+    BINDINGS = [
+        ("ctrl+d", "toggle_dark", "Toggle Dark Mode"),
+        ("ctrl+q", "quit", "Quit"),
+    ]
+
+    def __init__(self, model: Model, controller: "Controller", agent_name: str = "agent"):
+        super().__init__()
+        self.model = model
+        self.controller = controller
+        self.agent_name = agent_name  # Store the agent name
+        self._last_rendered_message_count = 0
+        # Register the view as a listener to the model
+        self.model.register_listener(self.on_model_update)
+        # Map state types to their rendering methods within the View
+        self.state_renderers = {
+            IdleState: self._render_idle,
+            AgentIsThinkingState: self._render_thinking,
+            ErrorState: self._render_error,
+        }
+        # Map message roles to their rendering methods
+        self.message_renderers = {
+            'user': self._render_user_message,
+            'assistant': self._render_assistant_message,
+        }
+
+    def compose(self) -> ComposeResult:
+        """Create the core UI widgets."""
+        yield Header()
+        yield RichLog(id="chat-log", auto_scroll=True, wrap=True, highlight=True)
+        yield Input(placeholder="Enter your prompt or type /help...")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        """Called when the app is first mounted."""
+        self.log_widget = self.query_one(RichLog)
+        self.input_widget = self.query_one(Input)
+        self.input_widget.focus()
+        
+        # Set the initial title and sub_title
+        self.title = "Agent Dashboard"
+        self.sub_title = f"Active Agent: [bold]{self.agent_name}[/]"
+        self.log_widget.write("🤖 Agent is ready. Say 'Hi' or type a command.")
+
+    async def on_model_update(self) -> None:
+        """
+        Callback triggered when the model's state changes.
+        
+        This is now a standard awaitable coroutine. We use `call_later`
+        to ensure the UI updates happen safely on the main app thread.
+        """
+        self.call_later(self._render_status)
+        self.call_later(self._render_new_messages)
+
+    def _render_status(self) -> None:
+        """Renders the status by dispatching to the correct method."""
+        state_type = type(self.model.application_state)
+        # Polymorphic call without the if/elif block
+        renderer = self.state_renderers.get(state_type)
+        if renderer:
+            renderer()
+
+    # --- Status methods now update self.sub_title ---
+
+    def _render_idle(self) -> None:
+        if self.model.last_success_message:
+            self.sub_title = f"✅ {self.model.last_success_message}"
+            self.model.last_success_message = None
+        else:
+            # Revert to showing the active agent when idle
+            self.sub_title = f"Active Agent: [bold]{self.agent_name}[/]"
+
+    def _render_thinking(self) -> None:
+        self.sub_title = "🤔 Thinking..."
+
+    def _render_error(self) -> None:
+        if self.model.last_error_message:
+            self.sub_title = f"💥 Error: {self.model.last_error_message}"
+            self.model.last_error_message = None
+
+    # --- Specific message rendering methods ---
+
+    def _render_user_message(self, message) -> None:
+        """Renders a user message."""
+        log_message = Text.from_markup(f"[bold blue]You:[/bold blue] {message.last_text()}")
+        self.log_widget.write(log_message)
+
+    def _render_assistant_message(self, message) -> None:
+        """Renders an assistant message."""
+        log_message = Text.from_markup(f"[bold magenta]Agent:[/bold magenta] {message.last_text()}")
+        self.log_widget.write(log_message)
+
+    def _render_new_messages(self) -> None:
+        """Renders only new messages from the conversation history to the log."""
+        current_message_count = len(self.model.conversation_history)
+        if current_message_count > self._last_rendered_message_count:
+            new_messages = self.model.conversation_history[self._last_rendered_message_count:]
+            for message in new_messages:
+                # Polymorphic dispatch based on message role
+                renderer = self.message_renderers.get(message.role)
+                if renderer:
+                    renderer(message)
+                else:
+                    # Fallback for unknown roles
+                    self.log_widget.write(f"[dim]{message.role}:[/dim] {message.last_text()}")
+            self._last_rendered_message_count = current_message_count
+
+    @on(Input.Submitted)
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handles the submission of user input by starting a worker."""
+        user_input = event.value
+        if not user_input:
+            return
+        
+        # Clear the input immediately for a responsive feel
+        self.input_widget.clear()
+        
+        # Run the entire controller interaction in a background worker
+        # to keep the UI from freezing during agent processing.
+        self.run_worker(self.handle_submission(user_input), exclusive=True)
+
+    async def handle_submission(self, user_input: str) -> None:
+        """
+        This method is run in a worker. It processes the user input
+        and handles commands that control the app's lifecycle.
+        """
+        try:
+            await self.controller.process_user_input(user_input)
+        except ExitCommand:
+            self.exit()
+        except SwitchAgentCommand as e:
+            self.exit(result=e.agent_name)
+
+```
+
+--- END OF FILE textual_view.py ---
 
 --- START OF FILE view.py ---
 

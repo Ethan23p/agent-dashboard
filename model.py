@@ -2,19 +2,52 @@
 import asyncio
 import json
 import os
+from abc import ABC
 from datetime import datetime
-from enum import Enum, auto
 from typing import Callable, List, Optional
 
 # Core types from the fast-agent framework.
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
 
-class AppState(Enum):
-    """Defines the possible states of the client application."""
-    IDLE = auto()
-    AGENT_IS_THINKING = auto()
-    WAITING_FOR_USER_INPUT = auto()
-    ERROR = auto()
+# --- Persistence Service Functions ---
+async def save_history(history: list[PromptMessageMultipart], filepath: str) -> bool:
+    """Saves conversation history to a file."""
+    try:
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
+        serializable_history = [
+            message.model_dump(mode='json') for message in history
+        ]
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(serializable_history, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+async def load_history(filepath: str) -> list[PromptMessageMultipart]:
+    """Loads conversation history from a file."""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            raw_history = json.load(f)
+        # Re-create the rich PromptMessageMultipart objects from the raw dicts.
+        return [PromptMessageMultipart(**data) for data in raw_history]
+    except (FileNotFoundError, json.JSONDecodeError, TypeError):
+        return []
+
+# --- State Pattern Implementation ---
+class IAppState(ABC):
+    """An abstract base class for application states. Serves as a marker."""
+    pass
+
+class IdleState(IAppState): 
+    pass
+
+class AgentIsThinkingState(IAppState): 
+    pass
+
+class ErrorState(IAppState): 
+    pass
 
 class Model:
     """
@@ -26,7 +59,7 @@ class Model:
         # --- State Data ---
         self.session_id: str = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.conversation_history: List[PromptMessageMultipart] = []
-        self.application_state: AppState = AppState.IDLE
+        self.application_state: IAppState = IdleState()
         self.last_error_message: Optional[str] = None
         self.last_success_message: Optional[str] = None
         
@@ -82,56 +115,13 @@ class Model:
         self.conversation_history = []
         await self._notify_listeners()
 
-    async def set_state(self, new_state: AppState, error_message: Optional[str] = None, success_message: Optional[str] = None):
+    async def set_state(self, new_state: IAppState, error_message: Optional[str] = None, success_message: Optional[str] = None):
         """Updates the application's current state and notifies listeners."""
         self.application_state = new_state
-        if new_state == AppState.ERROR:
+        if isinstance(new_state, ErrorState):
             self.last_error_message = error_message
             self.last_success_message = None
         else:
             self.last_error_message = None # Clear error on non-error states.
             self.last_success_message = success_message
         await self._notify_listeners()
-
-    async def load_history_from_file(self, filepath: str) -> bool:
-        """
-        Loads conversation history from a JSON file, replacing the current history.
-        Returns True on success, False on failure.
-        """
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                raw_history = json.load(f)
-            # Re-create the rich PromptMessageMultipart objects from the raw dicts.
-            self.conversation_history = [
-                PromptMessageMultipart(**data) for data in raw_history
-            ]
-            await self._notify_listeners()
-            return True
-        except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
-            # We don't change state on failure, just report it.
-            await self.set_state(AppState.ERROR, f"Failed to load history: {e}")
-            return False
-
-    # --- Methods for Actions (Instructed by the Controller) ---
-
-    async def save_history_to_file(self, filepath: Optional[str] = None) -> bool:
-        """
-        Saves the current conversation history to a specified JSON file.
-        This method does not mutate the model's state.
-        Returns True on success, False on failure.
-        """
-        target_filepath = filepath or self.user_preferences["auto_save_filename"]
-        context_dir = self._get_context_dir()
-        os.makedirs(context_dir, exist_ok=True)
-
-        try:
-            serializable_history = [
-                message.model_dump(mode='json') for message in self.conversation_history
-            ]
-            with open(target_filepath, 'w', encoding='utf-8') as f:
-                json.dump(serializable_history, f, indent=2, ensure_ascii=False)
-            return True
-        except Exception:
-            # If saving fails, we set an error state to inform the user.
-            await self.set_state(AppState.ERROR, f"Could not write to file {target_filepath}")
-            return False
