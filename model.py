@@ -2,52 +2,48 @@
 import asyncio
 import json
 import os
-from abc import ABC
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, List, Optional
 
 # Core types from the fast-agent framework.
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
+from mcp.types import ElicitRequestParams
+from rich.text import Text
 
-# --- Persistence Service Functions ---
 async def save_history(history: list[PromptMessageMultipart], filepath: str) -> bool:
-    """Saves conversation history to a file."""
     try:
-        # Ensure the directory exists
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        
-        serializable_history = [
-            message.model_dump(mode='json') for message in history
-        ]
+        serializable_history = [message.model_dump(mode='json') for message in history]
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(serializable_history, f, indent=2, ensure_ascii=False)
         return True
     except Exception:
         return False
 
-async def load_history(filepath: str) -> list[PromptMessageMultipart]:
-    """Loads conversation history from a file."""
+async def load_history(filepath: str) -> list[PromptMessageMultipart] | None:
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             raw_history = json.load(f)
-        # Re-create the rich PromptMessageMultipart objects from the raw dicts.
         return [PromptMessageMultipart(**data) for data in raw_history]
     except (FileNotFoundError, json.JSONDecodeError, TypeError):
-        return []
+        return None
 
-# --- State Pattern Implementation ---
-class IAppState(ABC):
-    """An abstract base class for application states. Serves as a marker."""
-    pass
+@dataclass
+class Interaction:
+    content: Text
+    tag: str = "message"
 
-class IdleState(IAppState): 
-    pass
+@dataclass
+class ElicitationContext:
+    params: ElicitRequestParams
+    future: asyncio.Future
 
-class AgentIsThinkingState(IAppState): 
-    pass
-
-class ErrorState(IAppState): 
-    pass
+from abc import ABC
+class IAppState(ABC): pass
+class IdleState(IAppState): pass
+class AgentIsThinkingState(IAppState): pass
+class ErrorState(IAppState): pass
 
 class Model:
     """
@@ -58,8 +54,9 @@ class Model:
     def __init__(self):
         # --- State Data ---
         self.session_id: str = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.conversation_history: List[PromptMessageMultipart] = []
-        self.application_state: IAppState = IdleState()
+        self.conversation_log: list[Interaction] = []
+        self.active_elicitation_context: ElicitationContext | None = None
+        self.is_thinking: bool = False
         self.last_error_message: Optional[str] = None
         self.last_success_message: Optional[str] = None
         
@@ -94,34 +91,22 @@ class Model:
 
     # --- Methods to Mutate State (Instructed by the Controller) ---
 
-    async def add_message(self, message: PromptMessageMultipart):
-        """Appends a new message to the conversation history."""
-        self.conversation_history.append(message)
+    async def add_interaction(self, interaction: Interaction):
+        self.conversation_log.append(interaction)
         await self._notify_listeners()
 
-    async def pop_last_message(self) -> Optional[PromptMessageMultipart]:
-        """
-        Removes and returns the last message from the history.
-        Crucial for rolling back state on agent failure.
-        """
-        if not self.conversation_history:
-            return None
-        last_message = self.conversation_history.pop()
-        await self._notify_listeners()
-        return last_message
-
-    async def clear_history(self):
-        """Clears the entire conversation history."""
-        self.conversation_history = []
+    async def clear_log(self):
+        self.conversation_log = []
         await self._notify_listeners()
 
-    async def set_state(self, new_state: IAppState, error_message: Optional[str] = None, success_message: Optional[str] = None):
-        """Updates the application's current state and notifies listeners."""
-        self.application_state = new_state
-        if isinstance(new_state, ErrorState):
-            self.last_error_message = error_message
-            self.last_success_message = None
-        else:
-            self.last_error_message = None # Clear error on non-error states.
-            self.last_success_message = success_message
+    async def start_elicitation(self, params: ElicitRequestParams, future: asyncio.Future):
+        self.active_elicitation_context = ElicitationContext(params=params, future=future)
+        await self._notify_listeners()
+
+    async def end_elicitation(self):
+        self.active_elicitation_context = None
+        await self._notify_listeners()
+
+    async def set_thinking_status(self, is_thinking: bool):
+        self.is_thinking = is_thinking
         await self._notify_listeners()

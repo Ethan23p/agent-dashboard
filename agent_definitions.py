@@ -37,13 +37,16 @@ AGENT_DEFINITIONS = [
         "servers": ["filesystem"],
         "max_tokens": 4096,
     },
-    # Example of an agent with fewer custom parameters.
-    # It will use the default max_tokens.
     {
-        "name": "summarizer",
-        "description": "A concise summarization agent.",
-        "instruction": "Summarize any provided text concisely.",
-        "servers": ["fetch"],
+        "name": "interpreter",
+        "description": "A structured data interpreter.",
+        "instruction": """
+        You are a highly efficient data parsing engine.
+        Given a user's natural language text and a target JSON schema,
+        your sole purpose is to extract the relevant information and respond
+        ONLY with the JSON object that conforms to the schema.
+        """,
+        "use_history": False,
     },
 ]
 

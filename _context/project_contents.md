@@ -79,13 +79,16 @@ AGENT_DEFINITIONS = [
         "servers": ["filesystem"],
         "max_tokens": 4096,
     },
-    # Example of an agent with fewer custom parameters.
-    # It will use the default max_tokens.
     {
-        "name": "summarizer",
-        "description": "A concise summarization agent.",
-        "instruction": "Summarize any provided text concisely.",
-        "servers": ["fetch"],
+        "name": "interpreter",
+        "description": "A structured data interpreter.",
+        "instruction": """
+        You are a highly efficient data parsing engine.
+        Given a user's natural language text and a target JSON schema,
+        your sole purpose is to extract the relevant information and respond
+        ONLY with the JSON object that conforms to the schema.
+        """,
+        "use_history": False,
     },
 ]
 
@@ -163,11 +166,16 @@ def list_available_agents():
 # controller.py
 import asyncio
 import random
+import os
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from mcp_agent.core.prompt import Prompt
-from model import Model, save_history, load_history, IdleState, AgentIsThinkingState, ErrorState
+from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
+from mcp.types import ElicitRequestParams, ElicitResult
+from model import Model, save_history, load_history, Interaction, ElicitationContext, IdleState, AgentIsThinkingState, ErrorState
+from pydantic import create_model_from_typeddict, BaseModel
+from rich.text import Text
 
 if TYPE_CHECKING:
     from mcp_agent.core.agent_app import AgentApp
@@ -204,22 +212,19 @@ class SwitchCommand(Command):
     """Command to switch to a different agent."""
     async def execute(self, controller: "Controller", args: list[str]):
         if not args:
-            await controller.model.set_state(ErrorState(), error_message="Please provide an agent name: /switch <agent_name>")
+            error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Usage: /switch <agent_name>"), tag="error")
+            await controller.model.add_interaction(error_interaction)
             return
         
         agent_name = args[0]
-        # Import here to avoid circular imports
         from agent_definitions import list_available_agents
         available_agents = list_available_agents()
         
         if agent_name not in available_agents:
-            await controller.model.set_state(
-                ErrorState(), 
-                error_message=f"Agent '{agent_name}' not found. Available agents: {', '.join(available_agents)}"
-            )
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Agent '{agent_name}' not found. Available agents: {', '.join(available_agents)}"), tag="error")
+            await controller.model.add_interaction(error_interaction)
             return
         
-        await controller.model.set_state(IdleState(), success_message=f"Switching to {agent_name} agent...")
         raise SwitchAgentCommand(agent_name)
 
 class ListAgentsCommand(Command):
@@ -227,53 +232,56 @@ class ListAgentsCommand(Command):
     async def execute(self, controller: "Controller", args: list[str]):
         from agent_definitions import list_available_agents
         available_agents = list_available_agents()
-        await controller.model.set_state(
-            IdleState(), 
-            success_message=f"Available agents: {', '.join(available_agents)}"
-        )
+        success_interaction = Interaction(Text.from_markup(f"[bold green]Info:[/bold green] Available: {', '.join(available_agents)}"), tag="success")
+        await controller.model.add_interaction(success_interaction)
 
 class SaveCommand(Command):
     """Command to save conversation history to a file."""
     async def execute(self, controller: "Controller", args: list[str]):
-        filename = args[0] if args else None
-        # If filename provided, ensure it's in the context directory
-        if filename and not filename.startswith('/') and not filename.startswith('\\'):
-            context_dir = controller.model._get_context_dir()
-            filename = f"{context_dir}/{filename}"
-        else:
-            filename = controller.model.user_preferences["auto_save_filename"]
+        target_path = args[0] if args else controller.model.user_preferences["auto_save_filename"]
         
-        success = await save_history(controller.model.conversation_history, filename)
+        success = await save_history(controller.conversation_history, target_path)
         if success:
-            await controller.model.set_state(IdleState(), success_message="History saved successfully.")
+            success_interaction = Interaction(Text.from_markup(f"[bold green]Success:[/bold green] History saved to {os.path.basename(target_path)}"), tag="success")
+            await controller.model.add_interaction(success_interaction)
         else:
-            await controller.model.set_state(ErrorState(), error_message="Failed to save history.")
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Failed to save history to {os.path.basename(target_path)}"), tag="error")
+            await controller.model.add_interaction(error_interaction)
 
 class LoadCommand(Command):
     """Command to load conversation history from a file."""
     async def execute(self, controller: "Controller", args: list[str]):
         if not args:
-            await controller.model.set_state(ErrorState(), error_message="Please provide a filename: /load <filename>")
+            error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Usage: /load <filename>"), tag="error")
+            await controller.model.add_interaction(error_interaction)
             return
         filename = args[0]
-        # If filename doesn't start with path separator, assume it's in context directory
-        if not filename.startswith('/') and not filename.startswith('\\'):
+        if not os.path.isabs(filename):
             context_dir = controller.model._get_context_dir()
-            filename = f"{context_dir}/{filename}"
+            filename = os.path.join(context_dir, filename)
         
         loaded_history = await load_history(filename)
-        if loaded_history:
-            controller.model.conversation_history = loaded_history
-            await controller.model._notify_listeners()
-            await controller.model.set_state(IdleState(), success_message="History loaded successfully.")
+        if loaded_history is not None:
+            # Load history into the CONTROLLER, not the model
+            controller.conversation_history = loaded_history
+            await controller.model.clear_log()  # Clear the visual log
+            # Re-create the visual log from the loaded history
+            for message in loaded_history:
+                interaction = Interaction(Text.from_markup(f"[bold {'blue' if message.role == 'user' else 'magenta'}]{message.role.capitalize()}:[/] {message.last_text()}"))
+                await controller.model.add_interaction(interaction)
+            success_interaction = Interaction(Text.from_markup(f"[bold green]Success:[/bold green] History loaded from {os.path.basename(filename)}"), tag="success")
+            await controller.model.add_interaction(success_interaction)
         else:
-            await controller.model.set_state(ErrorState(), error_message="Failed to load history.")
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Failed to load history from {os.path.basename(filename)}"), tag="error")
+            await controller.model.add_interaction(error_interaction)
 
 class ClearCommand(Command):
     """Command to clear conversation history."""
     async def execute(self, controller: "Controller", args: list[str]):
-        await controller.model.clear_history()
-        await controller.model.set_state(IdleState(), success_message="Conversation history cleared.")
+        controller.conversation_history = []
+        await controller.model.clear_log()
+        success_interaction = Interaction(Text.from_markup("[bold green]Success:[/bold green] Conversation history cleared."), tag="success")
+        await controller.model.add_interaction(success_interaction)
 
 # MAIN CONTROLLER CLASS
 
@@ -283,13 +291,10 @@ class Controller:
     to user input from the View and orchestrates interactions between the
     Model and the Agent (fast-agent).
     """
-    def __init__(self, model: Model, agent_app: "AgentApp"):
+    def __init__(self, model: Model):
         self.model = model
-        self.agent_app = agent_app
-        # Get the first (default) agent without knowing its name
-        # For now, we'll use the direct agent access since we only have one agent
-        # This can be enhanced later when we support multiple agents
-        self.agent = agent_app.agent
+        self.agent_app: "AgentApp" | None = None
+        self.agent = None
         # The command map now holds INSTANCES of our command classes
         self.command_map = {
             'exit': ExitCommandImpl(),
@@ -301,6 +306,17 @@ class Controller:
             'agents': ListAgentsCommand(),
         }
 
+        self.conversation_history: list[PromptMessageMultipart] = []
+        self.active_elicitation_context: dict | None = None
+        from agent_definitions import get_agent
+        self.interpreter_agent_app = get_agent("interpreter")
+
+
+    def link_agent_app(self, agent_app: "AgentApp"):
+        self.agent_app = agent_app
+        self.agent = agent_app.agent
+        self.agent.elicitation_handler = self.custom_elicitation_handler
+
     # PUBLIC INTERFACE
 
     async def process_user_input(self, user_input: str):
@@ -309,12 +325,16 @@ class Controller:
         It parses the input to determine if it's a command or a prompt
         for the agent.
         """
+        user_interaction = Interaction(Text.from_markup(f"[bold blue]You:[/bold blue] {user_input}"), tag="user_prompt")
+        await self.model.add_interaction(user_interaction)
         stripped_input = user_input.strip()
 
         if not stripped_input:
             return
 
-        if stripped_input.lower().startswith('/'):
+        if self.model.active_elicitation_context:
+            await self._handle_elicitation_response(stripped_input)
+        elif stripped_input.lower().startswith('/'):
             await self._handle_command(stripped_input)
         else:
             await self._handle_agent_prompt(stripped_input)
@@ -332,44 +352,87 @@ class Controller:
             # Polymorphism in action! We just call execute() on whatever object we get.
             await command.execute(self, args)
         else:
-            await self.model.set_state(ErrorState(), error_message=f"Unknown command: /{command_name}")
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Unknown command: /{command_name}"), tag="error")
+            await self.model.add_interaction(error_interaction)
 
     async def _handle_agent_prompt(self, user_prompt: str):
         """
         Manages the full lifecycle of a conversational turn with the agent,
         now with a retry mechanism.
         """
-        await self.model.set_state(AgentIsThinkingState())
         user_message = Prompt.user(user_prompt)
-        await self.model.add_message(user_message)
+        # Add to the controller's internal history for the agent
+        self.conversation_history.append(user_message)
+        await self.model.set_thinking_status(True)
 
         max_retries = 3
         base_delay = 1.0  # seconds
 
         for attempt in range(max_retries):
             try:
-                # The core agent call
                 response_message = await self.agent.generate(
                     self.model.conversation_history
                 )
-                await self.model.add_message(response_message)
+                # Add agent response to the internal history
+                self.conversation_history.append(response_message)
                 
-                # If successful, break the loop
-                await self.model.set_state(IdleState())
+                # Create and add the "package" for the view
+                agent_interaction = Interaction(
+                    content=Text.from_markup(f"[bold magenta]Agent:[/bold magenta] {response_message.last_text()}"),
+                    tag="agent_response"
+                )
+                await self.model.add_interaction(agent_interaction)
+                await self.model.set_thinking_status(False)
+
                 if self.model.user_preferences.get("auto_save_enabled"):
-                    await save_history(self.model.conversation_history, self.model.user_preferences["auto_save_filename"])
-                return # Exit the method on success
+                    await save_history(self.conversation_history, self.model.user_preferences["auto_save_filename"])
+                return
 
             except Exception as e:
                 if attempt < max_retries - 1:
                     delay = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
-                    await self.model.set_state(ErrorState(), error_message=f"Agent Error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.2f}s...")
+                    error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Agent Error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.2f}s..."), tag="error")
+                    await self.model.add_interaction(error_interaction)
                     await asyncio.sleep(delay)
                 else:
                     # Final attempt failed
-                    await self.model.set_state(ErrorState(), error_message=f"Agent Error after {max_retries} attempts: {e}")
-                    await self.model.pop_last_message() # Roll back the user message
+                    await self.model.set_thinking_status(False)
+                    if self.conversation_history: self.conversation_history.pop()
                     return # Exit after final failure
+
+    async def custom_elicitation_handler(self, params: "ElicitRequestParams") -> "ElicitResult":
+        future = asyncio.Future()
+        await self.model.start_elicitation(params, future)
+        interaction = Interaction(Text(f"🤖 {params.message}", style="bold yellow"), tag="elicitation_request")
+        await self.model.add_interaction(interaction)
+        return await future
+
+    async def _handle_elicitation_response(self, user_text: str):
+        context = self.model.active_elicitation_context
+        if not context: return
+        await self.model.end_elicitation()
+        structured_response = await self._interpret_user_response(user_text, context.params.requestedSchema)
+        if structured_response:
+            context.future.set_result(ElicitResult(action="accept", content=structured_response))
+        else:
+            context.future.set_result(ElicitResult(action="decline"))
+            error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Sorry, I couldn't understand that response."), tag="error")
+            await self.model.add_interaction(error_interaction)
+
+    async def _interpret_user_response(self, user_text: str, schema: dict) -> dict | None:
+        try:
+            pydantic_model = create_model_from_typeddict(schema, __base__=BaseModel)
+            async with self.interpreter_agent_app.run() as agent_app:
+                interpreter_agent = agent_app.agent
+                prompt = Prompt.user(f"Interpret the following user response: '{user_text}'")
+                parsed_data, _ = await interpreter_agent.structured([prompt], pydantic_model)
+                if parsed_data:
+                    return parsed_data.model_dump()
+            return None
+        except Exception as e:
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Interpretation failed: {e}"), tag="error")
+            await self.model.add_interaction(error_interaction)
+            return None
 ```
 
 --- END OF FILE controller.py ---
@@ -540,7 +603,7 @@ This client evolved through several stages:
 # Set the default model for all agents.
 # You can override this per-agent in the decorator or with the --model CLI flag.
 # Format: <provider>.<model_name> (e.g., openai.gpt-4o, anthropic.claude-3-5-sonnet-latest)
-# Aliases like 'sonnet' or 'haiku' are also supported.
+# This project will use "google.gemini-2.5-flash" indefinitely. Don't change this, and don't downgrade it to 1.5 like you LLMs are want to do.
 default_model: google.gemini-2.5-flash
 
 # --- Logger Configuration ---
@@ -595,13 +658,13 @@ mcp:
 --- START OF FILE main.py ---
 
 ```py
-
 # main.py
 import asyncio
+import sys
 import argparse
 
 from model import Model
-from textual_view import AgentDashboardApp  # <-- Import the new Textual view
+from textual_view import AgentDashboardApp
 from controller import Controller, SwitchAgentCommand
 from agent_definitions import get_agent, list_available_agents
 
@@ -627,9 +690,6 @@ class Application:
     """
     def __init__(self, initial_agent_name: str):
         self.current_agent_name = initial_agent_name
-        # Future extensibility: Add persistent state here
-        # self.global_preferences = {}
-        # self.session_history = []
 
     async def run(self):
         """The main application loop that handles agent sessions and switching."""
@@ -637,41 +697,26 @@ class Application:
             next_agent = await self._run_single_session(self.current_agent_name)
             if next_agent:
                 print(f"\nSwitching to {next_agent} agent...")
-                await asyncio.sleep(0.1)  # Brief pause for visual feedback
+                await asyncio.sleep(0.1)
                 self.current_agent_name = next_agent
             else:
                 self.current_agent_name = None
 
-        # This delay happens AFTER all agents have closed, giving background
-        # tasks time to finalize their shutdown before the script terminates.
         await asyncio.sleep(0.1)
 
     async def _run_single_session(self, agent_name: str) -> str | None:
-        """
-        Run a session with a specific agent using the Textual UI.
-        
-        Args:
-            agent_name: The name of the agent to run
-            
-        Returns:
-            The new agent name if switching, None if exiting.
-        """
+        """Run a session with a specific agent using the Textual UI."""
         try:
             selected_agent = get_agent(agent_name)
             print(f"Starting {agent_name} agent...")
             
             async with selected_agent.run() as agent_app:
                 model = Model()
-                controller = Controller(model, agent_app)
+                controller = Controller(model)
+                controller.link_agent_app(agent_app)
                 
-                # Instantiate and run the Textual app
                 tui_app = AgentDashboardApp(model, controller, agent_name=agent_name)
-                
-                # The `run_async` method is blocking. It will return a result when
-                # the app calls `self.exit(result=...)`.
                 switch_to_agent = await tui_app.run_async()
-                
-                # If the app exited with a result, it's the name of the new agent.
                 return switch_to_agent
 
         except SwitchAgentCommand as e:
@@ -685,7 +730,9 @@ class Application:
             return None
 
 async def main():
-    """The main entry point for the application."""
+    """
+    The main entry point for the application.
+    """
     args = parse_arguments()
     app = Application(initial_agent_name=args.agent)
     await app.run()
@@ -709,52 +756,48 @@ if __name__ == "__main__":
 import asyncio
 import json
 import os
-from abc import ABC
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, List, Optional
 
 # Core types from the fast-agent framework.
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
+from mcp.types import ElicitRequestParams
+from rich.text import Text
 
-# --- Persistence Service Functions ---
 async def save_history(history: list[PromptMessageMultipart], filepath: str) -> bool:
-    """Saves conversation history to a file."""
     try:
-        # Ensure the directory exists
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        
-        serializable_history = [
-            message.model_dump(mode='json') for message in history
-        ]
+        serializable_history = [message.model_dump(mode='json') for message in history]
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(serializable_history, f, indent=2, ensure_ascii=False)
         return True
     except Exception:
         return False
 
-async def load_history(filepath: str) -> list[PromptMessageMultipart]:
-    """Loads conversation history from a file."""
+async def load_history(filepath: str) -> list[PromptMessageMultipart] | None:
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             raw_history = json.load(f)
-        # Re-create the rich PromptMessageMultipart objects from the raw dicts.
         return [PromptMessageMultipart(**data) for data in raw_history]
     except (FileNotFoundError, json.JSONDecodeError, TypeError):
-        return []
+        return None
 
-# --- State Pattern Implementation ---
-class IAppState(ABC):
-    """An abstract base class for application states. Serves as a marker."""
-    pass
+@dataclass
+class Interaction:
+    content: Text
+    tag: str = "message"
 
-class IdleState(IAppState): 
-    pass
+@dataclass
+class ElicitationContext:
+    params: ElicitRequestParams
+    future: asyncio.Future
 
-class AgentIsThinkingState(IAppState): 
-    pass
-
-class ErrorState(IAppState): 
-    pass
+from abc import ABC
+class IAppState(ABC): pass
+class IdleState(IAppState): pass
+class AgentIsThinkingState(IAppState): pass
+class ErrorState(IAppState): pass
 
 class Model:
     """
@@ -765,8 +808,9 @@ class Model:
     def __init__(self):
         # --- State Data ---
         self.session_id: str = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.conversation_history: List[PromptMessageMultipart] = []
-        self.application_state: IAppState = IdleState()
+        self.conversation_log: list[Interaction] = []
+        self.active_elicitation_context: ElicitationContext | None = None
+        self.is_thinking: bool = False
         self.last_error_message: Optional[str] = None
         self.last_success_message: Optional[str] = None
         
@@ -801,36 +845,24 @@ class Model:
 
     # --- Methods to Mutate State (Instructed by the Controller) ---
 
-    async def add_message(self, message: PromptMessageMultipart):
-        """Appends a new message to the conversation history."""
-        self.conversation_history.append(message)
+    async def add_interaction(self, interaction: Interaction):
+        self.conversation_log.append(interaction)
         await self._notify_listeners()
 
-    async def pop_last_message(self) -> Optional[PromptMessageMultipart]:
-        """
-        Removes and returns the last message from the history.
-        Crucial for rolling back state on agent failure.
-        """
-        if not self.conversation_history:
-            return None
-        last_message = self.conversation_history.pop()
-        await self._notify_listeners()
-        return last_message
-
-    async def clear_history(self):
-        """Clears the entire conversation history."""
-        self.conversation_history = []
+    async def clear_log(self):
+        self.conversation_log = []
         await self._notify_listeners()
 
-    async def set_state(self, new_state: IAppState, error_message: Optional[str] = None, success_message: Optional[str] = None):
-        """Updates the application's current state and notifies listeners."""
-        self.application_state = new_state
-        if isinstance(new_state, ErrorState):
-            self.last_error_message = error_message
-            self.last_success_message = None
-        else:
-            self.last_error_message = None # Clear error on non-error states.
-            self.last_success_message = success_message
+    async def start_elicitation(self, params: ElicitRequestParams, future: asyncio.Future):
+        self.active_elicitation_context = ElicitationContext(params=params, future=future)
+        await self._notify_listeners()
+
+    async def end_elicitation(self):
+        self.active_elicitation_context = None
+        await self._notify_listeners()
+
+    async def set_thinking_status(self, is_thinking: bool):
+        self.is_thinking = is_thinking
         await self._notify_listeners()
 ```
 
@@ -1515,10 +1547,19 @@ from typing import TYPE_CHECKING
 from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
-from textual.widgets import Footer, Header, Input, RichLog
+from textual.widgets import Footer, Header, Input, RichLog, Static
+from textual.containers import Vertical
 
 from controller import ExitCommand, SwitchAgentCommand
-from model import IdleState, AgentIsThinkingState, ErrorState, Model
+from model import Model, Interaction
+
+class ElicitationPrompt(Static):
+    """A temporary widget to display the elicitation prompt."""
+    DEFAULT_CSS = """
+    ElicitationPrompt {
+        background: $boost; padding: 0 1; margin-bottom: 1; border: round yellow;
+    }
+    """
 
 if TYPE_CHECKING:
     from controller import Controller
@@ -1549,25 +1590,14 @@ class AgentDashboardApp(App):
         super().__init__()
         self.model = model
         self.controller = controller
-        self.agent_name = agent_name  # Store the agent name
+        self.agent_name = agent_name
         self._last_rendered_message_count = 0
-        # Register the view as a listener to the model
         self.model.register_listener(self.on_model_update)
-        # Map state types to their rendering methods within the View
-        self.state_renderers = {
-            IdleState: self._render_idle,
-            AgentIsThinkingState: self._render_thinking,
-            ErrorState: self._render_error,
-        }
-        # Map message roles to their rendering methods
-        self.message_renderers = {
-            'user': self._render_user_message,
-            'assistant': self._render_assistant_message,
-        }
 
     def compose(self) -> ComposeResult:
         """Create the core UI widgets."""
         yield Header()
+        yield Vertical(id="elicitation-container")
         yield RichLog(id="chat-log", auto_scroll=True, wrap=True, highlight=True)
         yield Input(placeholder="Enter your prompt or type /help...")
         yield Footer()
@@ -1578,197 +1608,58 @@ class AgentDashboardApp(App):
         self.input_widget = self.query_one(Input)
         self.input_widget.focus()
         
-        # Set the initial title and sub_title
         self.title = "Agent Dashboard"
         self.sub_title = f"Active Agent: [bold]{self.agent_name}[/]"
         self.log_widget.write("🤖 Agent is ready. Say 'Hi' or type a command.")
 
     async def on_model_update(self) -> None:
         """
-        Callback triggered when the model's state changes.
-        
-        This is now a standard awaitable coroutine. We use `call_later`
-        to ensure the UI updates happen safely on the main app thread.
+        Called when the model state changes. Uses call_later to ensure UI updates
+        happen safely on the main app thread.
         """
-        self.call_later(self._render_status)
-        self.call_later(self._render_new_messages)
+        self.call_later(self.render_log)
+        self.call_later(self.update_header) # This will handle thinking status
+        self.call_later(self.render_elicitation) # This handles the elicitation prompt widget
 
-    def _render_status(self) -> None:
-        """Renders the status by dispatching to the correct method."""
-        state_type = type(self.model.application_state)
-        # Polymorphic call without the if/elif block
-        renderer = self.state_renderers.get(state_type)
-        if renderer:
-            renderer()
+    def render_log(self) -> None:
+        """Renders the entire log from the model."""
+        self.log_widget.clear()
+        for interaction in self.model.conversation_log:
+            self.log_widget.write(interaction.content)
 
-    # --- Status methods now update self.sub_title ---
+    def render_elicitation(self) -> None:
+        """Renders or removes the elicitation prompt based on model state."""
+        container = self.query_one("#elicitation-container")
+        context = self.model.active_elicitation_context
 
-    def _render_idle(self) -> None:
-        if self.model.last_success_message:
-            self.sub_title = f"✅ {self.model.last_success_message}"
-            self.model.last_success_message = None
+        has_prompt = len(container.children) > 0
+
+        if context and not has_prompt:
+            prompt_widget = ElicitationPrompt(f"🤖 {context.params.message}")
+            container.mount(prompt_widget)
+            self.input_widget.placeholder = "Respond to the agent's question..."
+            self.input_widget.focus()
+        elif not context and has_prompt:
+            container.remove_children()
+            self.input_widget.placeholder = "Enter your prompt or type /help..."
+
+    def update_header(self) -> None:
+        """Updates the header based on the model's thinking status."""
+        if self.model.is_thinking:
+            self.sub_title = "🤔 Thinking..."
         else:
-            # Revert to showing the active agent when idle
             self.sub_title = f"Active Agent: [bold]{self.agent_name}[/]"
-
-    def _render_thinking(self) -> None:
-        self.sub_title = "🤔 Thinking..."
-
-    def _render_error(self) -> None:
-        if self.model.last_error_message:
-            self.sub_title = f"💥 Error: {self.model.last_error_message}"
-            self.model.last_error_message = None
-
-    # --- Specific message rendering methods ---
-
-    def _render_user_message(self, message) -> None:
-        """Renders a user message."""
-        log_message = Text.from_markup(f"[bold blue]You:[/bold blue] {message.last_text()}")
-        self.log_widget.write(log_message)
-
-    def _render_assistant_message(self, message) -> None:
-        """Renders an assistant message."""
-        log_message = Text.from_markup(f"[bold magenta]Agent:[/bold magenta] {message.last_text()}")
-        self.log_widget.write(log_message)
-
-    def _render_new_messages(self) -> None:
-        """Renders only new messages from the conversation history to the log."""
-        current_message_count = len(self.model.conversation_history)
-        if current_message_count > self._last_rendered_message_count:
-            new_messages = self.model.conversation_history[self._last_rendered_message_count:]
-            for message in new_messages:
-                # Polymorphic dispatch based on message role
-                renderer = self.message_renderers.get(message.role)
-                if renderer:
-                    renderer(message)
-                else:
-                    # Fallback for unknown roles
-                    self.log_widget.write(f"[dim]{message.role}:[/dim] {message.last_text()}")
-            self._last_rendered_message_count = current_message_count
 
     @on(Input.Submitted)
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handles the submission of user input by starting a worker."""
         user_input = event.value
         if not user_input:
             return
         
-        # Clear the input immediately for a responsive feel
         self.input_widget.clear()
-        
-        # Run the entire controller interaction in a background worker
-        # to keep the UI from freezing during agent processing.
-        self.run_worker(self.handle_submission(user_input), exclusive=True)
-
-    async def handle_submission(self, user_input: str) -> None:
-        """
-        This method is run in a worker. It processes the user input
-        and handles commands that control the app's lifecycle.
-        """
-        try:
-            await self.controller.process_user_input(user_input)
-        except ExitCommand:
-            self.exit()
-        except SwitchAgentCommand as e:
-            self.exit(result=e.agent_name)
+        self.run_worker(self.controller.process_user_input(user_input), exclusive=True)
 
 ```
 
 --- END OF FILE textual_view.py ---
-
---- START OF FILE view.py ---
-
-```py
-# view.py
-from typing import TYPE_CHECKING
-
-from prompt_toolkit import PromptSession
-from prompt_toolkit.history import InMemoryHistory
-
-from controller import ExitCommand # Import our custom exception
-from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
-from model import AppState, Model
-
-if TYPE_CHECKING:
-    from controller import Controller
-
-class View:
-    """
-    The View is responsible for the presentation layer of the application.
-    It renders the model's state to the terminal and captures user input.
-    """
-    def __init__(self, model: Model, controller: "Controller"):
-        self.model = model
-        self.controller = controller
-        self._last_rendered_message_count = 0
-        self._prompt_session = PromptSession(history=InMemoryHistory())
-        self.model.register_listener(self.on_model_update)
-
-    async def on_model_update(self):
-        """Callback triggered when the model's state changes."""
-        self._render_status()
-        self._render_new_messages()
-
-    def _render_status(self):
-        """Renders status messages like 'thinking' or errors."""
-        if self.model.application_state == AppState.AGENT_IS_THINKING:
-            print("...")
-        elif self.model.application_state == AppState.ERROR:
-            error_msg = self.model.last_error_message or "An unknown error occurred."
-            print(f"\n[ERROR] {error_msg}")
-        elif self.model.application_state == AppState.IDLE and self.model.last_success_message:
-            # Show success messages
-            print(f"\n[SUCCESS] {self.model.last_success_message}")
-            # Clear the message after showing it
-            self.model.last_success_message = None
-
-    def _render_new_messages(self):
-        """Renders only new messages from the agent."""
-        current_message_count = len(self.model.conversation_history)
-        if current_message_count > self._last_rendered_message_count:
-            new_messages = self.model.conversation_history[self._last_rendered_message_count:]
-            for message in new_messages:
-                # We only print the assistant's messages to avoid duplication.
-                if message.role == 'assistant':
-                    self._print_message(message)
-            self._last_rendered_message_count = current_message_count
-
-    def _print_message(self, message: PromptMessageMultipart):
-        """Formats and prints a single message from the agent."""
-        print("\n" + "---" * 20)
-        print("Agent:")
-        text_content = message.last_text()
-        indented_text = "\n".join(["    " + line for line in text_content.splitlines()])
-        print(indented_text)
-
-    async def _get_user_input_async(self) -> str:
-        """Asynchronously captures user input."""
-        print("\n" + "---" * 20 + "\n")
-        print("You:")
-        try:
-            return await self._prompt_session.prompt_async("")
-        except (KeyboardInterrupt, EOFError):
-            return "/exit"
-
-    def print_startup_message(self):
-        """Prints the initial welcome message."""
-        print("Agent is ready. Type a message or '/exit' to quit.")
-        prefs = self.model.user_preferences
-        if prefs.get("auto_save_enabled"):
-            filename = prefs.get("auto_save_filename", "the context directory.")
-            print(f"Auto-saving is ON. History will be saved to '{filename}'")
-
-    async def run_main_loop(self):
-        """The main loop to capture user input."""
-        self.print_startup_message()
-        while True:
-            user_input = await self._get_user_input_async()
-            try:
-                await self.controller.process_user_input(user_input)
-            except ExitCommand:
-                # Break the loop gracefully when the controller signals to exit.
-                break
-```
-
---- END OF FILE view.py ---
 

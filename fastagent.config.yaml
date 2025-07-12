@@ -4,7 +4,7 @@
 # Set the default model for all agents.
 # You can override this per-agent in the decorator or with the --model CLI flag.
 # Format: <provider>.<model_name> (e.g., openai.gpt-4o, anthropic.claude-3-5-sonnet-latest)
-# Aliases like 'sonnet' or 'haiku' are also supported.
+# This project will use "google.gemini-2.5-flash" indefinitely. Don't change this, and don't downgrade it to 1.5 like you LLMs are want to do.
 default_model: google.gemini-2.5-flash
 
 # --- Logger Configuration ---
