@@ -1,5 +1,5 @@
 # secure_filesystem_server.py
-
+# Needs to be validated; not sure this is the correct implementation.
 import os
 from pathlib import Path
 from typing import List
@@ -65,14 +65,13 @@ def list_allowed_directories(allowed_dirs: List[Path] = typer.Option(...)) -> st
     return "This server has read-only access to the following directories:\n" + "\n".join([str(d.resolve()) for d in allowed_dirs])
 
 
-# The `run` function provided by FastMCP will automatically handle CLI arguments.
-# Any arguments defined here (like `allowed_dirs`) that are not tools themselves
-# will be passed to all tool functions that require them.
-@mcp.run(transport="stdio")
 def main(allowed_dirs: List[Path] = typer.Argument(..., help="List of directories to allow read access to.")):
     """
     A read-only filesystem MCP server.
     This server will run until the client disconnects.
     """
-    # The typer decorator and mcp.run handle the server lifecycle.
-    pass
+    # Start the MCP server
+    mcp.run(transport="stdio")
+
+if __name__ == "__main__":
+    typer.run(main)

@@ -1,0 +1,30 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Who is better to you, OpenAI or Microsoft?",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Error: Unknown tool: sequential_thinking",
+        "annotations": null,
+        "meta": null
+      },
+      {
+        "type": "text",
+        "text": "As an AI, I do not have personal opinions, feelings, or preferences. Therefore, I cannot choose between OpenAI or Microsoft as \"better.\" My purpose is to assist users based on the information I have been trained on and the tools I can access, regardless of the developer.",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  }
+]

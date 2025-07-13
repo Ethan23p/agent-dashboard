@@ -13,378 +13,153 @@ wheels/
 
 # Virtual environments
 .venv
+venv/
+env/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 ```
 
 --- END OF FILE .gitignore ---
 
---- START OF FILE agent_definitions.py ---
-
-```py
-# agent_definitions.py
-from mcp_agent.core.fastagent import FastAgent
-from mcp_agent.core.request_params import RequestParams
-
-# This module's sole purpose is to define the agents for the application.
-# It acts as a catalog that can be imported by any client or runner.
-#
-# NOTE: All agents should use use_history=False since we manage conversation
-# history ourselves in the Model class and pass it explicitly to the agent.
-
-# Simple single agent for basic operations
-minimal_agent = FastAgent("Minimal Agent")
-
-@minimal_agent.agent(
-    name="agent",
-    instruction="""
-    You are a helpful assistant that can perform various operations.
-    You can read files, write files, and list directory contents.
-    Always be helpful and provide clear responses to user requests.
-    """,
-    servers=["filesystem", "fetch", "sequential-thinking"],
-    request_params=RequestParams(maxTokens=2048),
-    use_history=False 
-)
-
-async def agent():
-    """ This function is a placeholder for the decorator. """
-    pass
-
-# Example of a second agent with different characteristics
-coding_agent = FastAgent("Coding Assistant")
-
-@coding_agent.agent(
-    name="agent",
-    instruction="""
-    You are a specialized coding assistant. You excel at:
-    - Code review and suggestions
-    - Debugging and problem-solving
-    - Explaining complex technical concepts
-    - Providing code examples and best practices
-    
-    Always provide clear, well-documented code examples when relevant.
-    """,
-    servers=["filesystem"],
-    request_params=RequestParams(maxTokens=4096),
-    use_history=False
-)
-
-async def coding_agent_func():
-    """ This function is a placeholder for the decorator. """
-    pass
-
-# Agent Registry - maps agent names to their FastAgent instances
-AGENT_REGISTRY = {
-    "minimal": minimal_agent,
-    "coding": coding_agent,
-}
-
-def get_agent(agent_name: str = "minimal"):
-    """
-    Get an agent by name from the registry.
-    
-    Args:
-        agent_name: The name of the agent to retrieve
-        
-    Returns:
-        The FastAgent instance for the requested agent
-        
-    Raises:
-        KeyError: If the agent name is not found in the registry
-    """
-    if agent_name not in AGENT_REGISTRY:
-        available_agents = ", ".join(AGENT_REGISTRY.keys())
-        raise KeyError(f"Agent '{agent_name}' not found. Available agents: {available_agents}")
-    
-    return AGENT_REGISTRY[agent_name]
-
-def list_available_agents():
-    """Return a list of available agent names."""
-    return list(AGENT_REGISTRY.keys())
-
-```
-
---- END OF FILE agent_definitions.py ---
-
---- START OF FILE config/.python-version ---
+--- START OF FILE paperwork/.python-version ---
 
 ```
 3.13
 
 ```
 
---- END OF FILE config/.python-version ---
+--- END OF FILE paperwork/.python-version ---
 
---- START OF FILE controller.py ---
+--- START OF FILE paperwork/agent-dashboard.code-workspace ---
 
-```py
-# controller.py
-import asyncio
-import random
-from typing import TYPE_CHECKING
-
-from mcp_agent.core.prompt import Prompt
-from model import AppState, Model
-
-if TYPE_CHECKING:
-    from mcp_agent.core.agent_app import AgentApp
-
-class ExitCommand(Exception):
-    """Custom exception to signal a graceful exit from the main loop."""
-    pass
-
-class SwitchAgentCommand(Exception):
-    """Custom exception to signal switching to a different agent."""
-    def __init__(self, agent_name: str):
-        self.agent_name = agent_name
-        super().__init__(f"Switch to agent: {agent_name}")
-
-class Controller:
-    """
-    The Controller contains the application's business logic. It responds
-    to user input from the View and orchestrates interactions between the
-    Model and the Agent (fast-agent).
-    """
-    def __init__(self, model: Model, agent_app: "AgentApp"):
-        self.model = model
-        self.agent_app = agent_app
-        # Get the first (default) agent without knowing its name
-        # For now, we'll use the direct agent access since we only have one agent
-        # This can be enhanced later when we support multiple agents
-        self.agent = agent_app.agent
-
-    async def process_user_input(self, user_input: str):
-        """
-        The main entry point for handling actions initiated by the user.
-        It parses the input to determine if it's a command or a prompt
-        for the agent.
-        """
-        stripped_input = user_input.strip()
-
-        if not stripped_input:
-            return
-
-        if stripped_input.lower().startswith('/'):
-            await self._handle_command(stripped_input)
-        else:
-            await self._handle_agent_prompt(stripped_input)
-
-    async def _handle_command(self, command_str: str):
-        """Parses and executes client-side commands like /save or /exit."""
-        parts = command_str.lower().split()
-        command_name = parts[0][1:]  # remove the '/'
-        args = parts[1:]
-
-        command_map = {
-            'exit': self._cmd_exit,
-            'quit': self._cmd_exit,
-            'save': self._cmd_save,
-            'load': self._cmd_load,
-            'clear': self._cmd_clear,
-            'switch': self._cmd_switch,
-            'agents': self._cmd_list_agents,
-        }
-
-        handler = command_map.get(command_name)
-        if handler:
-            await handler(args)
-        else:
-            await self.model.set_state(AppState.ERROR, error_message=f"Unknown command: /{command_name}")
-
-    async def _cmd_exit(self, args):
-        raise ExitCommand()
-
-    async def _cmd_switch(self, args):
-        """Switch to a different agent."""
-        if not args:
-            await self.model.set_state(AppState.ERROR, error_message="Please provide an agent name: /switch <agent_name>")
-            return
-        
-        agent_name = args[0]
-        # Import here to avoid circular imports
-        from agent_definitions import list_available_agents
-        available_agents = list_available_agents()
-        
-        if agent_name not in available_agents:
-            await self.model.set_state(
-                AppState.ERROR, 
-                error_message=f"Agent '{agent_name}' not found. Available agents: {', '.join(available_agents)}"
-            )
-            return
-        
-        await self.model.set_state(AppState.IDLE, success_message=f"Switching to {agent_name} agent...")
-        raise SwitchAgentCommand(agent_name)
-
-    async def _cmd_list_agents(self, args):
-        """List available agents."""
-        from agent_definitions import list_available_agents
-        available_agents = list_available_agents()
-        await self.model.set_state(
-            AppState.IDLE, 
-            success_message=f"Available agents: {', '.join(available_agents)}"
-        )
-
-    async def _cmd_save(self, args):
-        filename = args[0] if args else None
-        # If filename provided, ensure it's in the context directory
-        if filename and not filename.startswith('/') and not filename.startswith('\\'):
-            context_dir = self.model._get_context_dir()
-            filename = f"{context_dir}/{filename}"
-        success = await self.model.save_history_to_file(filename)
-        if success:
-            await self.model.set_state(AppState.IDLE, success_message="History saved successfully.")
-        else:
-            await self.model.set_state(AppState.ERROR, error_message="Failed to save history.")
-
-    async def _cmd_load(self, args):
-        if not args:
-            await self.model.set_state(AppState.ERROR, error_message="Please provide a filename: /load <filename>")
-            return
-        filename = args[0]
-        # If filename doesn't start with path separator, assume it's in context directory
-        if not filename.startswith('/') and not filename.startswith('\\'):
-            context_dir = self.model._get_context_dir()
-            filename = f"{context_dir}/{filename}"
-        success = await self.model.load_history_from_file(filename)
-        if success:
-            await self.model.set_state(AppState.IDLE, success_message="History loaded successfully.")
-        else:
-            await self.model.set_state(AppState.ERROR, error_message="Failed to load history.")
-
-    async def _cmd_clear(self, args):
-        await self.model.clear_history()
-        await self.model.set_state(AppState.IDLE, success_message="Conversation history cleared.")
-
-
-    async def _handle_agent_prompt(self, user_prompt: str):
-        """
-        Manages the full lifecycle of a conversational turn with the agent,
-        now with a retry mechanism.
-        """
-        await self.model.set_state(AppState.AGENT_IS_THINKING)
-        user_message = Prompt.user(user_prompt)
-        await self.model.add_message(user_message)
-
-        max_retries = 3
-        base_delay = 1.0  # seconds
-
-        for attempt in range(max_retries):
-            try:
-                # The core agent call
-                response_message = await self.agent.generate(
-                    self.model.conversation_history
-                )
-                await self.model.add_message(response_message)
-                
-                # If successful, break the loop
-                await self.model.set_state(AppState.IDLE)
-                if self.model.user_preferences.get("auto_save_enabled"):
-                    await self.model.save_history_to_file()
-                return # Exit the method on success
-
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    delay = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
-                    await self.model.set_state(AppState.ERROR, error_message=f"Agent Error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.2f}s...")
-                    await asyncio.sleep(delay)
-                else:
-                    # Final attempt failed
-                    await self.model.set_state(AppState.ERROR, error_message=f"Agent Error after {max_retries} attempts: {e}")
-                    await self.model.pop_last_message() # Roll back the user message
-                    return # Exit after final failure
-```
-
---- END OF FILE controller.py ---
-
---- START OF FILE docs/AGENT_SELECTION.md ---
-
-```md
-# Agent Selection System
-
-The agent dashboard now supports flexible agent selection with the ability to switch between different agents at runtime.
-
-## Available Agents
-
-- **minimal**: A basic assistant for general operations
-- **coding**: A specialized coding assistant with enhanced programming capabilities
-
-## Usage
-
-### Command Line Selection
-
-Start with a specific agent:
-```bash
-python main.py --agent minimal
-python main.py --agent coding
-```
-
-### Runtime Switching
-
-While using the application, you can switch agents using commands:
-
-- `/agents` - List all available agents
-- `/switch <agent_name>` - Switch to a different agent
-
-Example:
-```
-You: /agents
-[SUCCESS] Available agents: minimal, coding
-
-You: /switch coding
-[SUCCESS] Switching to coding agent...
-```
-
-## Adding New Agents
-
-To add a new agent, edit `agent_definitions.py`:
-
-1. Create a new FastAgent instance:
-```python
-my_agent = FastAgent("My Agent Name")
-```
-
-2. Define the agent with decorator:
-```python
-@my_agent.agent(
-    name="agent",
-    instruction="Your agent instructions here...",
-    servers=["filesystem"],
-    request_params=RequestParams(maxTokens=2048),
-    use_history=False
-)
-async def my_agent_func():
-    pass
-```
-
-3. Add to the registry:
-```python
-AGENT_REGISTRY = {
-    "minimal": minimal_agent,
-    "coding": coding_agent,
-    "my_agent": my_agent,  # Add your new agent here
+```code-workspace
+{
+	"folders": [
+		{
+			"name": "agent-dashboard",
+			"path": ".."
+		},
+		{
+			"path": "../../context_for_MCP_and_fast-agent"
+		}
+	],
+	"settings": {}
 }
 ```
 
-## Architecture
+--- END OF FILE paperwork/agent-dashboard.code-workspace ---
 
-The agent selection system uses:
+--- START OF FILE paperwork/CHANGELOG.md ---
 
-- **Agent Registry**: Central registry mapping names to FastAgent instances
-- **Command-line arguments**: Select initial agent
-- **Runtime switching**: Switch agents during session
-- **Exception-based flow control**: Clean agent switching without complex state management
+```md
+# Changelog
 
-## Testing
+All notable changes to this project will be documented in this file.
 
-Run the test suite to verify agent selection works:
-```bash
-python test_agent_selection.py
-``` 
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- Centralized state management in Model class
+- Unified vocabulary using "Interaction" terminology
+- Separated command logic into dedicated `commands.py` module
+- Renamed `agent_definitions.py` to `agent_registry.py` for clarity
+- Fixed duplicate user message display issue
+- Improved ExitCommand exception handling for graceful shutdown
+
+### Changed
+- Refactored Controller to be stateless
+- Moved conversation history management to Model
+- Updated all imports to use new module structure
+- Reorganized project structure with `src/`, `paperwork/`, and `tests/` directories
+- Moved all Python code to `src/` directory
+- Grouped documentation and project files in `paperwork/` directory
+
+## [0.1.0] - 2024-12-19
+
+### Added
+- Textual-based TUI overhaul with better modularization
+- Agent switching functionality with `/switch` command
+- Multiple agent support (minimal, coding, interpreter)
+- Retry mechanism with exponential backoff for agent calls
+- Comprehensive testing suite with unit and integration tests
+- Model-View-Controller (MVC) architecture
+- Asynchronous core with non-blocking UI
+- Stateful conversation history with save/load functionality
+- MCP server integration (filesystem, fetch, sequential-thinking)
+
+### Changed
+- Migrated from basic CLI to Textual-based interface
+- Improved error handling and resilience
+- Enhanced separation of concerns across codebase
+
+### Fixed
+- Visual bugs in Textual interface
+- Error handling for transient failures
+- Code organization and modularization
+
+## [Initial Development] - 2024-12-18
+
+### Added
+- Minimum Viable Implementation with MVC structure
+- Basic agent framework integration
+- Initial client and agent framework setup
+- Core functionality for agent interactions
+
+---
+
+*Note: This changelog is based on recent commit history. For a complete history, see the git log.* 
 ```
 
---- END OF FILE docs/AGENT_SELECTION.md ---
+--- END OF FILE paperwork/CHANGELOG.md ---
 
---- START OF FILE docs/README.md ---
+--- START OF FILE paperwork/README.md ---
 
 ```md
 # Agent Dashboard
@@ -392,6 +167,26 @@ python test_agent_selection.py
 A terminal client for the `fast-agent` framework.
 
 This project started as a way to have a more stable and transparent interface for agent development. The core is a Model-View-Controller (MVC) architecture, separating the application's state from its terminal UI and logic.
+
+## Project Structure
+
+```
+agent-dashboard/
+├── src/                           # Main application code
+│   ├── main.py                   # Application entry point
+│   ├── controller.py              # Business logic controller
+│   ├── model.py                   # Data model and state management
+│   ├── textual_view.py            # Textual-based UI
+│   ├── agent_registry.py          # Agent definitions and registry
+│   ├── commands.py                # Command implementations
+│   ├── secure_filesystem_server.py # MCP filesystem server
+│   └── fastagent.config.yaml     # FastAgent configuration
+├── tests/                         # Test suite
+├── paperwork/                     # Documentation and project files
+│   ├── README.md                  # This file
+│   └── CHANGELOG.md              # Version history
+└── [other directories]            # utils/, config/, data/, _context/
+```
 
 ## Technical Details
 
@@ -407,6 +202,16 @@ The client is built with a few key ideas in mind:
 
 *   **Comprehensive Testing.** The application includes a complete testing suite with unit tests, integration tests, and retry mechanisms to ensure reliability and maintainability.
 
+## Running the Application
+
+```bash
+# From the project root
+python src/main.py
+
+# With specific agent
+python src/main.py --agent coding
+```
+
 ## Testing
 
 The project includes a comprehensive testing suite to ensure reliability and maintainability:
@@ -415,23 +220,23 @@ The project includes a comprehensive testing suite to ensure reliability and mai
 
 ```bash
 # Install test dependencies
-pip install pytest pytest-asyncio
+uv add --dev pytest pytest-asyncio
 
 # Run all tests
-python run_tests.py
+python -m pytest tests/
 
 # Run specific test file
-python run_tests.py test_model.py
+python -m pytest tests/test_model.py
 
 # Run with verbose output
-python run_tests.py -v
+python -m pytest tests/ -v
 ```
 
 ### Test Structure
 
-- **`test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
-- **`test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
-- **`test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
+- **`tests/test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
+- **`tests/test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
+- **`tests/test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
 
 ### Test Features
 
@@ -451,9 +256,407 @@ This client evolved through several stages:
 
 ```
 
---- END OF FILE docs/README.md ---
+--- END OF FILE paperwork/README.md ---
 
---- START OF FILE fastagent.config.yaml ---
+--- START OF FILE pyproject.toml ---
+
+```toml
+[project]
+name = "agent-dashboard"
+version = "0.1.0"
+description = "A terminal-based agent dashboard for MCP agents"
+readme = "paperwork/README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "anthropic>=0.53.0",
+    "mcp[cli]>=1.9.3",
+    "python-dotenv>=1.1.0",
+    "rich>=14.0.0",
+    "prompt_toolkit>=3.0.0",
+    "fast-agent-mcp>=0.2.41",
+    "multidict>=6.5.1",
+    "textual>=3.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+```
+
+--- END OF FILE pyproject.toml ---
+
+--- START OF FILE src/agent_registry.py ---
+
+```py
+# agent_definitions.py
+from mcp_agent.core.fastagent import FastAgent
+from mcp_agent.core.request_params import RequestParams
+
+# This module's sole purpose is to define the agents for the application.
+# It acts as a catalog that can be imported by any client or runner.
+#
+# NOTE: All agents should use use_history=False since we manage conversation
+# history ourselves in the Model class and pass it explicitly to the agent.
+
+# A list of dictionaries, where each dictionary defines an agent.
+# This is flexible – only include the keys you need for each agent.
+AGENT_DEFINITIONS = [
+    {
+        "name": "minimal",
+        "description": "A helpful assistant for general operations.",
+        "instruction": """
+        You are a helpful assistant that can perform various operations.
+        You can read files, write files, and list directory contents.
+        Always be helpful and provide clear responses to user requests.
+        """,
+        "servers": ["filesystem", "fetch", "sequential-thinking"],
+        "max_tokens": 2048,
+    },
+    {
+        "name": "coding",
+        "description": "A specialized coding assistant.",
+        "instruction": """
+        You are a specialized coding assistant. You excel at:
+        - Code review and suggestions
+        - Debugging and problem-solving
+        - Explaining complex technical concepts
+        - Providing code examples and best practices
+        
+        Always provide clear, well-documented code examples when relevant.
+        """,
+        "servers": ["filesystem"],
+        "max_tokens": 4096,
+    },
+    {
+        "name": "interpreter",
+        "description": "A structured data interpreter.",
+        "instruction": """
+        You are a highly efficient data parsing engine.
+        Given a user's natural language text and a target JSON schema,
+        your sole purpose is to extract the relevant information and respond
+        ONLY with the JSON object that conforms to the schema.
+        """,
+        "use_history": False,
+    },
+]
+
+def _create_agent_from_definition(definition: dict) -> FastAgent:
+    """Factory function to build a FastAgent instance from a dictionary."""
+    
+    # Use .get() to provide defaults for optional keys
+    agent_name = definition.get("name", "minimal")
+    description = definition.get("description", "A fast-agent.")
+    instruction = definition.get("instruction", "You are a helpful assistant.")
+    servers = definition.get("servers", [])
+    max_tokens = definition.get("max_tokens", 2048)
+
+    agent_instance = FastAgent(description, config_path="src/fastagent.config.yaml")
+
+    # The decorator needs a function to decorate, even a placeholder
+    @agent_instance.agent(
+        name=agent_name,
+        instruction=instruction,
+        servers=servers,
+        request_params=RequestParams(maxTokens=max_tokens),
+        use_history=False
+    )
+    async def placeholder_func(): pass
+    
+    return agent_instance
+
+# The registry is now BUILT dynamically from the definitions list.
+AGENT_REGISTRY = {}
+
+# Default agent (first one in the list)
+DEFAULT_AGENT = AGENT_DEFINITIONS[0]["name"] if AGENT_DEFINITIONS else "minimal"
+
+# Populate the registry
+for definition in AGENT_DEFINITIONS:
+    agent_name = definition.get("name")
+    if agent_name:
+        AGENT_REGISTRY[agent_name] = _create_agent_from_definition(definition)
+
+def get_agent(agent_name: str = None):
+    """
+    Get an agent by name from the registry.
+    
+    Args:
+        agent_name: The name of the agent to retrieve. If None, uses DEFAULT_AGENT
+        
+    Returns:
+        The FastAgent instance for the requested agent
+        
+    Raises:
+        KeyError: If the agent name is not found in the registry
+    """
+    
+    if agent_name is None:
+        agent_name = DEFAULT_AGENT
+    
+    if agent_name not in AGENT_REGISTRY:
+        available_agents = ", ".join(AGENT_REGISTRY.keys())
+        raise KeyError(f"Agent '{agent_name}' not found. Available agents: {available_agents}")
+    
+    return AGENT_REGISTRY[agent_name]
+
+def list_available_agents():
+    """Return a list of available agent names."""
+    return list(AGENT_REGISTRY.keys())
+
+```
+
+--- END OF FILE src/agent_registry.py ---
+
+--- START OF FILE src/commands.py ---
+
+```py
+# commands.py
+import os
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
+from model import Model, save_history, load_history, Interaction
+from rich.text import Text
+
+if TYPE_CHECKING:
+    from controller import Controller
+
+
+class ExitCommand(Exception):
+    """Custom exception to signal a graceful exit from the main loop."""
+    pass
+
+
+class SwitchAgentCommand(Exception):
+    """Custom exception to signal switching to a different agent."""
+    def __init__(self, agent_name: str):
+        self.agent_name = agent_name
+        super().__init__(f"Switch to agent: {agent_name}")
+
+
+class Command(ABC):
+    """Abstract base class for all commands."""
+    @abstractmethod
+    async def execute(self, controller: "Controller", args: list[str]):
+        pass
+
+
+class ExitCommandImpl(Command):
+    """Command to exit the application."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        raise ExitCommand()
+
+
+class SwitchCommand(Command):
+    """Command to switch to a different agent."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        if not args:
+            error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Usage: /switch <agent_name>"), tag="error")
+            await controller.model.add_interaction(error_interaction)
+            return
+        
+        agent_name = args[0]
+        from agent_registry import list_available_agents
+        available_agents = list_available_agents()
+        
+        if agent_name not in available_agents:
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Agent '{agent_name}' not found. Available agents: {', '.join(available_agents)}"), tag="error")
+            await controller.model.add_interaction(error_interaction)
+            return
+        
+        raise SwitchAgentCommand(agent_name)
+
+
+class ListAgentsCommand(Command):
+    """Command to list available agents."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        from agent_registry import list_available_agents
+        available_agents = list_available_agents()
+        success_interaction = Interaction(Text.from_markup(f"[bold green]Info:[/bold green] Available: {', '.join(available_agents)}"), tag="success")
+        await controller.model.add_interaction(success_interaction)
+
+
+class SaveCommand(Command):
+    """Command to save conversation history to a file."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        target_path = args[0] if args else controller.model.user_preferences["auto_save_filename"]
+        
+        success = await save_history(controller.model.conversation_history, target_path)
+        if success:
+            success_interaction = Interaction(Text.from_markup(f"[bold green]Success:[/bold green] History saved to {os.path.basename(target_path)}"), tag="success")
+            await controller.model.add_interaction(success_interaction)
+        else:
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Failed to save history to {os.path.basename(target_path)}"), tag="error")
+            await controller.model.add_interaction(error_interaction)
+
+
+class LoadCommand(Command):
+    """Command to load conversation history from a file."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        if not args:
+            error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Usage: /load <filename>"), tag="error")
+            await controller.model.add_interaction(error_interaction)
+            return
+        filename = args[0]
+        if not os.path.isabs(filename):
+            context_dir = controller.model._get_context_dir()
+            filename = os.path.join(context_dir, filename)
+        
+        loaded_history = await load_history(filename)
+        if loaded_history is not None:
+            controller.model.conversation_history = loaded_history
+            await controller.model.clear_log()
+            for message in loaded_history:
+                interaction = Interaction(Text.from_markup(f"[bold {'blue' if message.role == 'user' else 'magenta'}]{message.role.capitalize()}:[/] {message.last_text()}"))
+                await controller.model.add_interaction(interaction)
+            success_interaction = Interaction(Text.from_markup(f"[bold green]Success:[/bold green] History loaded from {os.path.basename(filename)}"), tag="success")
+            await controller.model.add_interaction(success_interaction)
+        else:
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Failed to load history from {os.path.basename(filename)}"), tag="error")
+            await controller.model.add_interaction(error_interaction)
+
+
+class ClearCommand(Command):
+    """Command to clear conversation history."""
+    async def execute(self, controller: "Controller", args: list[str]):
+        await controller.model.clear_log()
+        success_interaction = Interaction(Text.from_markup("[bold green]Success:[/bold green] Conversation history cleared."), tag="success")
+        await controller.model.add_interaction(success_interaction) 
+```
+
+--- END OF FILE src/commands.py ---
+
+--- START OF FILE src/controller.py ---
+
+```py
+# controller.py
+import asyncio
+import random
+from typing import TYPE_CHECKING
+
+from model import Model, Interaction
+from commands import ExitCommand, SwitchAgentCommand, ExitCommandImpl, SwitchCommand, ListAgentsCommand, SaveCommand, LoadCommand, ClearCommand
+from rich.text import Text
+
+if TYPE_CHECKING:
+    from mcp_agent.core.agent_app import AgentApp
+
+
+class Controller:
+    """
+    The Controller contains the application's business logic. It responds
+    to user input from the View and orchestrates interactions between the
+    Model and the Agent.
+    """
+    def __init__(self, model: Model):
+        self.model = model
+        self.agent_app: "AgentApp | None" = None
+        self.agent = None
+        self.command_map = {
+            'exit': ExitCommandImpl(),
+            'quit': ExitCommandImpl(),
+            'save': SaveCommand(),
+            'load': LoadCommand(),
+            'clear': ClearCommand(),
+            'switch': SwitchCommand(),
+            'agents': ListAgentsCommand(),
+        }
+
+    def link_agent_app(self, agent_app: "AgentApp", agent_name: str):
+        """Link a specific agent from the agent_app to the controller."""
+        self.agent_app = agent_app
+        # Use getattr to dynamically get the correct agent attribute
+        self.agent = getattr(agent_app, agent_name)
+
+    async def process_user_input(self, user_input: str):
+        """
+        The main entry point for handling actions initiated by the user.
+        It parses the input to determine if it's a command or a prompt
+        for the agent.
+        """
+        stripped_input = user_input.strip()
+
+        if not stripped_input:
+            return
+
+        if stripped_input.lower().startswith('/'):
+            await self._handle_command(stripped_input)
+        else:
+            await self._handle_agent_prompt(stripped_input)
+
+    async def _handle_command(self, command_str: str):
+        """Parse and execute client-side commands."""
+        parts = command_str.lower().split()
+        command_name = parts[0][1:]
+        args = parts[1:]
+
+        command = self.command_map.get(command_name)
+        if command:
+            await command.execute(self, args)
+        else:
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Unknown command: /{command_name}"), tag="error")
+            await self.model.add_interaction(error_interaction)
+
+    async def _handle_agent_prompt(self, user_prompt: str):
+        """
+        Manage the full lifecycle of a conversational turn with the agent,
+        with retry mechanism.
+        """
+        if self.agent is None:
+            error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Agent has not been linked to the controller."), tag="error")
+            await self.model.add_interaction(error_interaction)
+            return
+
+        # Tell the Model to update its state
+        await self.model.add_user_turn(user_prompt)
+        await self.model.set_thinking_status(True)
+
+        max_retries = 3
+        base_delay = 1.0
+
+        for attempt in range(max_retries):
+            try:
+                # Get the history FROM the model to send to the agent
+                response_message = await self.agent.generate(
+                    self.model.conversation_history
+                )
+                # Tell the Model to update its state with the response
+                await self.model.add_assistant_turn(response_message)
+                await self.model.set_thinking_status(False)
+
+                if self.model.user_preferences.get("auto_save_enabled"):
+                    from model import save_history
+                    await save_history(self.model.conversation_history, self.model.user_preferences["auto_save_filename"])
+                return
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    delay = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
+                    error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Agent Error (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.2f}s..."), tag="error")
+                    await self.model.add_interaction(error_interaction)
+                    await asyncio.sleep(delay)
+                else:
+                    await self.model.set_thinking_status(False)
+                    if self.model.conversation_history: 
+                        self.model.conversation_history.pop()
+                    return
+
+
+```
+
+--- END OF FILE src/controller.py ---
+
+--- START OF FILE src/fastagent.config.yaml ---
 
 ```yaml
 # fastagent.config.yaml
@@ -462,7 +665,7 @@ This client evolved through several stages:
 # Set the default model for all agents.
 # You can override this per-agent in the decorator or with the --model CLI flag.
 # Format: <provider>.<model_name> (e.g., openai.gpt-4o, anthropic.claude-3-5-sonnet-latest)
-# Aliases like 'sonnet' or 'haiku' are also supported.
+# This project will use "google.gemini-2.5-flash" indefinitely. Don't change this, and don't downgrade it to 1.5 like you LLMs are want to do.
 default_model: google.gemini-2.5-flash
 
 # --- Logger Configuration ---
@@ -512,9 +715,9 @@ mcp:
         - "@modelcontextprotocol/server-sequential-thinking"
 ```
 
---- END OF FILE fastagent.config.yaml ---
+--- END OF FILE src/fastagent.config.yaml ---
 
---- START OF FILE main.py ---
+--- START OF FILE src/main.py ---
 
 ```py
 # main.py
@@ -523,9 +726,9 @@ import sys
 import argparse
 
 from model import Model
-from view import View
-from controller import Controller, ExitCommand, SwitchAgentCommand
-from agent_definitions import get_agent, list_available_agents
+from textual_view import AgentDashboardApp
+from controller import Controller, SwitchAgentCommand
+from agent_registry import get_agent, list_available_agents, DEFAULT_AGENT
 
 def print_shutdown_message():
     """Prints a consistent shutdown message."""
@@ -537,263 +740,254 @@ def parse_arguments():
     parser.add_argument(
         "--agent", "-a",
         type=str,
-        default="minimal",
+        default=DEFAULT_AGENT,
         help=f"Select agent to use. Available: {', '.join(list_available_agents())}"
     )
     return parser.parse_args()
 
-async def run_agent_session(agent_name: str):
+class Application:
     """
-    Run a session with a specific agent.
-    
-    Args:
-        agent_name: The name of the agent to run
-        
-    Returns:
-        The new agent name if switching, None if exiting
+    Manages the application's lifecycle and state.
+    Handles agent sessions and switching between agents.
     """
-    try:
-        # Get the selected agent from the registry
-        selected_agent = get_agent(agent_name)
-        print(f"Starting {agent_name} agent...")
-        
-        # Run the selected agent
-        async with selected_agent.run() as agent_app:
-            # Initialize MVC components
-            model = Model()
-            controller = Controller(model, agent_app)
-            view = View(model, controller)
+    def __init__(self, initial_agent_name: str):
+        self.current_agent_name = initial_agent_name
+
+    async def run(self):
+        """The main application loop that handles agent sessions and switching."""
+        while self.current_agent_name is not None:
+            next_agent = await self._run_single_session(self.current_agent_name)
+            if next_agent:
+                print(f"\nSwitching to {next_agent} agent...")
+                await asyncio.sleep(0.1)
+                self.current_agent_name = next_agent
+            else:
+                self.current_agent_name = None
+
+        await asyncio.sleep(0.1)
+
+    async def _run_single_session(self, agent_name: str) -> str | None:
+        """Run a session with a specific agent using the Textual UI."""
+        try:
+            selected_agent = get_agent(agent_name)
+            print(f"Starting {agent_name} agent...")
             
-            # Run the main loop until exit or switch
-            await view.run_main_loop()
-            return None  # Normal exit
-            
-    except SwitchAgentCommand as e:
-        return e.agent_name  # Switch to new agent
-    except KeyError as e:
-        print(f"Error: {e}")
-        print(f"Available agents: {', '.join(list_available_agents())}")
-        return None
+            async with selected_agent.run() as agent_app:
+                model = Model()
+                controller = Controller(model)
+                # Pass the agent_name to the updated link_agent_app method
+                controller.link_agent_app(agent_app, agent_name)
+                
+                tui_app = AgentDashboardApp(model, controller, agent_name=agent_name)
+                switch_to_agent = await tui_app.run_async()
+                return switch_to_agent
+
+        except SwitchAgentCommand as e:
+            return e.agent_name
+        except KeyError as e:
+            print(f"Error: {e}")
+            print(f"Available agents: {', '.join(list_available_agents())}")
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            return None
 
 async def main():
     """
     The main entry point for the application.
     """
-    # Parse command line arguments
     args = parse_arguments()
-    current_agent = args.agent
-    
-    # Main agent loop - handles switching between agents
-    while current_agent is not None:
-        current_agent = await run_agent_session(current_agent)
-        if current_agent:
-            print(f"\nSwitching to {current_agent} agent...")
-            # Small delay to show the switch message
-            await asyncio.sleep(0.5)
-
-    # This delay happens AFTER all agents have closed, giving background
-    # tasks time to finalize their shutdown before the script terminates.
-    await asyncio.sleep(0.1)
-
+    app = Application(initial_agent_name=args.agent)
+    await app.run()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        # We no longer catch SystemExit here, but keep it for robustness.
         pass
     finally:
-        # The final message is printed after everything has shut down.
         print_shutdown_message()
+
 ```
 
---- END OF FILE main.py ---
+--- END OF FILE src/main.py ---
 
---- START OF FILE model.py ---
+--- START OF FILE src/model.py ---
 
 ```py
 # model.py
 import asyncio
 import json
 import os
+from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum, auto
 from typing import Callable, List, Optional
 
-# Core types from the fast-agent framework.
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
+from mcp_agent.core.prompt import Prompt
+from rich.text import Text
 
-class AppState(Enum):
-    """Defines the possible states of the client application."""
-    IDLE = auto()
-    AGENT_IS_THINKING = auto()
-    WAITING_FOR_USER_INPUT = auto()
-    ERROR = auto()
+
+async def save_history(history: list[PromptMessageMultipart], filepath: str) -> bool:
+    """Save conversation history to a JSON file."""
+    try:
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        serializable_history = [message.model_dump(mode='json') for message in history]
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(serializable_history, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+
+async def load_history(filepath: str) -> list[PromptMessageMultipart] | None:
+    """Load conversation history from a JSON file."""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            raw_history = json.load(f)
+        return [PromptMessageMultipart(**data) for data in raw_history]
+    except (FileNotFoundError, json.JSONDecodeError, TypeError):
+        return None
+
+
+@dataclass
+class Interaction:
+    content: Text
+    tag: str = "message"
+
+
+# State classes
+from abc import ABC
+class IAppState(ABC): pass
+class IdleState(IAppState): pass
+class AgentIsThinkingState(IAppState): pass
+class ErrorState(IAppState): pass
+
 
 class Model:
     """
     The Model represents the single source of truth for the application's state.
-    It holds all data and notifies listeners when its state changes. It contains
-    no business logic and is entirely passive.
+    It holds all data and notifies listeners when its state changes.
     """
     def __init__(self):
-        # --- State Data ---
         self.session_id: str = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.conversation_history: List[PromptMessageMultipart] = []
-        self.application_state: AppState = AppState.IDLE
+        self.interactions: list[Interaction] = []  # Renamed from conversation_log
+        self.conversation_history: list[PromptMessageMultipart] = []  # Agent conversation history
+        self.is_thinking: bool = False
         self.last_error_message: Optional[str] = None
         self.last_success_message: Optional[str] = None
         
-        # Corrected initialization sequence:
-        # 1. Initialize the dictionary with static keys first.
+        # Initialize user preferences
         self.user_preferences: dict = {
             "auto_save_enabled": True,
             "context_dir": "_context",
         }
-        # 2. Now that self.user_preferences exists, we can safely use its
-        #    values to construct and add the dynamic key.
         self.user_preferences["auto_save_filename"] = f"{self._get_context_dir()}/{self.session_id}.json"
 
-        # --- Notification System ---
         self._listeners: List[Callable] = []
 
     def _get_context_dir(self) -> str:
-        """Helper to access the context directory from preferences."""
+        """Get the context directory from preferences."""
         return self.user_preferences.get("context_dir", "_context")
 
     async def _notify_listeners(self):
-        """Asynchronously notify all registered listeners of a state change."""
+        """Notify all registered listeners of a state change."""
         for listener in self._listeners:
             await listener()
 
     def register_listener(self, listener: Callable):
-        """
-        Allows other components (like the View) to register a callback
-        to be notified of state changes.
-        """
+        """Register a callback to be notified of state changes."""
         self._listeners.append(listener)
 
-    # --- Methods to Mutate State (Instructed by the Controller) ---
-
-    async def add_message(self, message: PromptMessageMultipart):
-        """Appends a new message to the conversation history."""
-        self.conversation_history.append(message)
+    async def add_interaction(self, interaction: Interaction):
+        """Add an interaction to the conversation log."""
+        self.interactions.append(interaction)
         await self._notify_listeners()
 
-    async def pop_last_message(self) -> Optional[PromptMessageMultipart]:
-        """
-        Removes and returns the last message from the history.
-        Crucial for rolling back state on agent failure.
-        """
-        if not self.conversation_history:
-            return None
-        last_message = self.conversation_history.pop()
+    async def add_user_turn(self, user_input: str):
+        """Adds a user turn to both the agent history and the UI log."""
+        user_message = Prompt.user(user_input)
+        self.conversation_history.append(user_message)
+        user_interaction = Interaction(Text.from_markup(f"[bold blue]You:[/bold blue] {user_input}"), tag="user_prompt")
+        self.interactions.append(user_interaction)
         await self._notify_listeners()
-        return last_message
 
-    async def clear_history(self):
-        """Clears the entire conversation history."""
+    async def add_assistant_turn(self, response_message: PromptMessageMultipart):
+        """Adds an assistant turn to both the agent history and the UI log."""
+        self.conversation_history.append(response_message)
+        agent_interaction = Interaction(
+            content=Text.from_markup(f"[bold magenta]Agent:[/bold magenta] {response_message.last_text()}"),
+            tag="agent_response"
+        )
+        self.interactions.append(agent_interaction)
+        await self._notify_listeners()
+
+    async def clear_log(self):
+        """Clear the conversation log."""
+        self.interactions = []
         self.conversation_history = []
         await self._notify_listeners()
 
-    async def set_state(self, new_state: AppState, error_message: Optional[str] = None, success_message: Optional[str] = None):
-        """Updates the application's current state and notifies listeners."""
-        self.application_state = new_state
-        if new_state == AppState.ERROR:
-            self.last_error_message = error_message
-            self.last_success_message = None
-        else:
-            self.last_error_message = None # Clear error on non-error states.
-            self.last_success_message = success_message
+    async def set_thinking_status(self, is_thinking: bool):
+        """Set the agent's thinking status."""
+        self.is_thinking = is_thinking
         await self._notify_listeners()
-
-    async def load_history_from_file(self, filepath: str) -> bool:
-        """
-        Loads conversation history from a JSON file, replacing the current history.
-        Returns True on success, False on failure.
-        """
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                raw_history = json.load(f)
-            # Re-create the rich PromptMessageMultipart objects from the raw dicts.
-            self.conversation_history = [
-                PromptMessageMultipart(**data) for data in raw_history
-            ]
-            await self._notify_listeners()
-            return True
-        except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
-            # We don't change state on failure, just report it.
-            await self.set_state(AppState.ERROR, f"Failed to load history: {e}")
-            return False
-
-    # --- Methods for Actions (Instructed by the Controller) ---
-
-    async def save_history_to_file(self, filepath: Optional[str] = None) -> bool:
-        """
-        Saves the current conversation history to a specified JSON file.
-        This method does not mutate the model's state.
-        Returns True on success, False on failure.
-        """
-        target_filepath = filepath or self.user_preferences["auto_save_filename"]
-        context_dir = self._get_context_dir()
-        os.makedirs(context_dir, exist_ok=True)
-
-        try:
-            serializable_history = [
-                message.model_dump(mode='json') for message in self.conversation_history
-            ]
-            with open(target_filepath, 'w', encoding='utf-8') as f:
-                json.dump(serializable_history, f, indent=2, ensure_ascii=False)
-            return True
-        except Exception:
-            # If saving fails, we set an error state to inform the user.
-            await self.set_state(AppState.ERROR, f"Could not write to file {target_filepath}")
-            return False
 ```
 
---- END OF FILE model.py ---
+--- END OF FILE src/model.py ---
 
---- START OF FILE pyproject.toml ---
+--- START OF FILE src/mood_server.py ---
 
-```toml
-[project]
-name = "agent-dashboard"
-version = "0.1.0"
-description = "A terminal-based agent dashboard for MCP agents"
-readme = "README.md"
-requires-python = ">=3.13"
-dependencies = [
-    "anthropic>=0.53.0",
-    "mcp[cli]>=1.9.3",
-    "python-dotenv>=1.1.0",
-    "rich>=14.0.0",
-    "prompt_toolkit>=3.0.0",
-    "fast-agent-mcp",
-    "multidict>=6.5.1",  # Fix for yanked 6.5.0 version
-]
+```py
+import sys
+import logging
+from mcp.server.fastmcp import FastMCP
+from mcp.server.elicitation import AcceptedElicitation, DeclinedElicitation, CancelledElicitation
+from pydantic import BaseModel, Field
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-]
+logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+logger = logging.getLogger("mood_server")
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["."]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
+mcp = FastMCP("Mood Elicitation Server")
 
+class MoodElicitationForm(BaseModel):
+    mood: str = Field(
+        description="In a few words, how are you feeling right now?",
+        max_length=100
+    )
+
+@mcp.tool()
+async def elicit_mood() -> str:
+    """Elicits user mood through interactive form and returns structured response."""
+    logger.info("Tool 'elicit_mood' called. Requesting free-form mood from user.")
+    
+    result = await mcp.get_context().elicit(
+        "Please share how you're feeling.",
+        schema=MoodElicitationForm
+    )
+
+    match result:
+        case AcceptedElicitation(data=data):
+            logger.info(f"User entered mood: '{data.mood}'")
+            return f"The user described their mood as: '{data.mood}'"
+        case DeclinedElicitation():
+            logger.info("User declined the mood elicitation.")
+            return "The user chose not to share their mood."
+        case CancelledElicitation():
+            logger.info("User cancelled the mood elicitation.")
+            return "The user cancelled the request."
+
+if __name__ == "__main__":
+    mcp.run()
 ```
 
---- END OF FILE pyproject.toml ---
+--- END OF FILE src/mood_server.py ---
 
---- START OF FILE secure_filesystem_server.py ---
+--- START OF FILE src/secure_filesystem_server.py ---
 
 ```py
 # secure_filesystem_server.py
-
+# Needs to be validated; not sure this is the correct implementation.
 import os
 from pathlib import Path
 from typing import List
@@ -859,20 +1053,126 @@ def list_allowed_directories(allowed_dirs: List[Path] = typer.Option(...)) -> st
     return "This server has read-only access to the following directories:\n" + "\n".join([str(d.resolve()) for d in allowed_dirs])
 
 
-# The `run` function provided by FastMCP will automatically handle CLI arguments.
-# Any arguments defined here (like `allowed_dirs`) that are not tools themselves
-# will be passed to all tool functions that require them.
-@mcp.run(transport="stdio")
 def main(allowed_dirs: List[Path] = typer.Argument(..., help="List of directories to allow read access to.")):
     """
     A read-only filesystem MCP server.
     This server will run until the client disconnects.
     """
-    # The typer decorator and mcp.run handle the server lifecycle.
-    pass
+    # Start the MCP server
+    mcp.run(transport="stdio")
+
+if __name__ == "__main__":
+    typer.run(main)
 ```
 
---- END OF FILE secure_filesystem_server.py ---
+--- END OF FILE src/secure_filesystem_server.py ---
+
+--- START OF FILE src/textual_view.py ---
+
+```py
+# textual_view.py
+from typing import TYPE_CHECKING
+
+from rich.text import Text
+from textual import on
+from textual.app import App, ComposeResult
+from textual.widgets import Footer, Header, Input, RichLog, Static
+from textual.containers import Vertical
+
+from controller import ExitCommand, SwitchAgentCommand
+from model import Model, Interaction
+from agent_registry import DEFAULT_AGENT
+
+if TYPE_CHECKING:
+    from controller import Controller
+
+
+class AgentDashboardApp(App):
+    """The Textual-based user interface for the agent dashboard."""
+
+    CSS = """
+    Screen {
+        background: $surface;
+    }
+    #chat-log {
+        margin: 1 2;
+        border: round $primary;
+        background: $panel;
+    }
+    Input {
+        dock: bottom;
+        margin: 0 1 1 1;
+    }
+    """
+    BINDINGS = [
+        ("ctrl+d", "toggle_dark", "Toggle Dark Mode"),
+        ("ctrl+q", "quit", "Quit"),
+    ]
+
+    def __init__(self, model: Model, controller: "Controller", agent_name: str = DEFAULT_AGENT):
+        super().__init__()
+        self.model = model
+        self.controller = controller
+        self.agent_name = agent_name
+        self._last_rendered_message_count = 0
+        self.model.register_listener(self.on_model_update)
+
+    def compose(self) -> ComposeResult:
+        """Create the core UI widgets."""
+        yield Header()
+        yield RichLog(id="chat-log", auto_scroll=True, wrap=True, highlight=True)
+        yield Input(placeholder="Enter your prompt or type /help...")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        """Initialize the app when first mounted."""
+        self.log_widget = self.query_one(RichLog)
+        self.input_widget = self.query_one(Input)
+        self.input_widget.focus()
+        
+        self.title = "Agent Dashboard"
+        self.sub_title = f"Active Agent: [bold]{self.agent_name}[/]"
+        self.log_widget.write("🤖 Agent is ready. Say 'Hi' or type a command.")
+
+    async def on_model_update(self) -> None:
+        """Handle model state changes by updating the UI safely on the main thread."""
+        self.call_later(self.render_log)
+        self.call_later(self.update_header)
+
+    def render_log(self) -> None:
+        """Render the entire conversation log from the model."""
+        self.log_widget.clear()
+        for interaction in self.model.interactions:
+            self.log_widget.write(interaction.content)
+
+    def update_header(self) -> None:
+        """Update the header based on the model's thinking status."""
+        if self.model.is_thinking:
+            self.sub_title = "🤔 Thinking..."
+        else:
+            self.sub_title = f"Active Agent: [bold]{self.agent_name}[/]"
+
+    @on(Input.Submitted)
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle user input submission."""
+        user_input = event.value
+        if not user_input:
+            return
+        
+        self.input_widget.clear()
+        
+        async def process_input_with_exit_handling():
+            try:
+                await self.controller.process_user_input(user_input)
+            except ExitCommand:
+                # Gracefully exit the application
+                self.exit()
+        
+        self.run_worker(process_input_with_exit_handling(), exclusive=True)
+
+```
+
+--- END OF FILE src/textual_view.py ---
 
 --- START OF FILE tests/run_tests.py ---
 
@@ -942,7 +1242,13 @@ Test script for agent selection functionality.
 """
 
 import asyncio
-from agent_definitions import get_agent, list_available_agents, AGENT_REGISTRY
+import sys
+import os
+
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+from agent_registry import get_agent, list_available_agents, AGENT_REGISTRY
 
 def test_agent_registry():
     """Test the agent registry functionality."""
@@ -1422,100 +1728,4 @@ async def test_user_preferences():
 ```
 
 --- END OF FILE tests/test_model.py ---
-
---- START OF FILE view.py ---
-
-```py
-# view.py
-from typing import TYPE_CHECKING
-
-from prompt_toolkit import PromptSession
-from prompt_toolkit.history import InMemoryHistory
-
-from controller import ExitCommand # Import our custom exception
-from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
-from model import AppState, Model
-
-if TYPE_CHECKING:
-    from controller import Controller
-
-class View:
-    """
-    The View is responsible for the presentation layer of the application.
-    It renders the model's state to the terminal and captures user input.
-    """
-    def __init__(self, model: Model, controller: "Controller"):
-        self.model = model
-        self.controller = controller
-        self._last_rendered_message_count = 0
-        self._prompt_session = PromptSession(history=InMemoryHistory())
-        self.model.register_listener(self.on_model_update)
-
-    async def on_model_update(self):
-        """Callback triggered when the model's state changes."""
-        self._render_status()
-        self._render_new_messages()
-
-    def _render_status(self):
-        """Renders status messages like 'thinking' or errors."""
-        if self.model.application_state == AppState.AGENT_IS_THINKING:
-            print("...")
-        elif self.model.application_state == AppState.ERROR:
-            error_msg = self.model.last_error_message or "An unknown error occurred."
-            print(f"\n[ERROR] {error_msg}")
-        elif self.model.application_state == AppState.IDLE and self.model.last_success_message:
-            # Show success messages
-            print(f"\n[SUCCESS] {self.model.last_success_message}")
-            # Clear the message after showing it
-            self.model.last_success_message = None
-
-    def _render_new_messages(self):
-        """Renders only new messages from the agent."""
-        current_message_count = len(self.model.conversation_history)
-        if current_message_count > self._last_rendered_message_count:
-            new_messages = self.model.conversation_history[self._last_rendered_message_count:]
-            for message in new_messages:
-                # We only print the assistant's messages to avoid duplication.
-                if message.role == 'assistant':
-                    self._print_message(message)
-            self._last_rendered_message_count = current_message_count
-
-    def _print_message(self, message: PromptMessageMultipart):
-        """Formats and prints a single message from the agent."""
-        print("\n" + "---" * 20)
-        print("Agent:")
-        text_content = message.last_text()
-        indented_text = "\n".join(["    " + line for line in text_content.splitlines()])
-        print(indented_text)
-
-    async def _get_user_input_async(self) -> str:
-        """Asynchronously captures user input."""
-        print("\n" + "---" * 20 + "\n")
-        print("You:")
-        try:
-            return await self._prompt_session.prompt_async("")
-        except (KeyboardInterrupt, EOFError):
-            return "/exit"
-
-    def print_startup_message(self):
-        """Prints the initial welcome message."""
-        print("Agent is ready. Type a message or '/exit' to quit.")
-        prefs = self.model.user_preferences
-        if prefs.get("auto_save_enabled"):
-            filename = prefs.get("auto_save_filename", "the context directory.")
-            print(f"Auto-saving is ON. History will be saved to '{filename}'")
-
-    async def run_main_loop(self):
-        """The main loop to capture user input."""
-        self.print_startup_message()
-        while True:
-            user_input = await self._get_user_input_async()
-            try:
-                await self.controller.process_user_input(user_input)
-            except ExitCommand:
-                # Break the loop gracefully when the controller signals to exit.
-                break
-```
-
---- END OF FILE view.py ---
 

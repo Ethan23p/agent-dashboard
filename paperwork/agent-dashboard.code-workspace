@@ -2,10 +2,10 @@
 	"folders": [
 		{
 			"name": "agent-dashboard",
-			"path": "."
+			"path": ".."
 		},
 		{
-			"path": "../context_for_MCP_and_fast-agent"
+			"path": "../../context_for_MCP_and_fast-agent"
 		}
 	],
 	"settings": {}

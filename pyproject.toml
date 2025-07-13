@@ -2,7 +2,7 @@
 name = "agent-dashboard"
 version = "0.1.0"
 description = "A terminal-based agent dashboard for MCP agents"
-readme = "README.md"
+readme = "paperwork/README.md"
 requires-python = ">=3.13"
 dependencies = [
     "anthropic>=0.53.0",
@@ -10,8 +10,9 @@ dependencies = [
     "python-dotenv>=1.1.0",
     "rich>=14.0.0",
     "prompt_toolkit>=3.0.0",
-    "fast-agent-mcp",
-    "multidict>=6.5.1",  # Fix for yanked 6.5.0 version
+    "fast-agent-mcp>=0.2.41",
+    "multidict>=6.5.1",
+    "textual>=3.7.0",
 ]
 
 [project.optional-dependencies]
@@ -22,7 +23,7 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["."]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

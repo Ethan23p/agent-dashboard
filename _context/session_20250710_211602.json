@@ -1,0 +1,164 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Heyyyyy what files do you have access to??",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Allowed directories:\nG:\\My Drive\\AI Resources\\Open collection",
+        "annotations": null,
+        "meta": null
+      },
+      {
+        "type": "text",
+        "text": "I have access to files within the directory: `G:\\\\My Drive\\\\AI Resources\\\\Open collection`.",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "And what tools?",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "I have access to the following tools:\n\n*   **File System Operations**:\n    *   `filesystem-read_file(path, head, tail)`: Reads the content of a single file.\n    *   `filesystem-read_multiple_files(paths)`: Reads the content of multiple files.\n    *   `filesystem-write_file(content, path)`: Creates or overwrites a file with new content.\n    *   `filesystem-edit_file(edits, path, dryRun)`: Edits a file by replacing specified line sequences.\n    *   `filesystem-create_directory(path)`: Creates a new directory.\n    *   `filesystem-list_directory(path)`: Lists contents of a directory.\n    *   `filesystem-list_directory_with_sizes(path, sortBy)`: Lists contents of a directory with file sizes.\n    *   `filesystem-directory_tree(path)`: Gets a recursive tree view of files and directories.\n    *   `filesystem-move_file(destination, source)`: Moves or renames files and directories.\n    *   `filesystem-search_files(path, pattern, excludePatterns)`: Recursively searches for files and directories.\n    *   `filesystem-get_file_info(path)`: Retrieves detailed metadata about a file or directory.\n    *   `filesystem-list_allowed_directories()`: Returns the list of directories that this server is allowed to access.\n\n*   **Internet Access**:\n    *   `fetch-fetch(url, max_length, raw, start_index)`: Fetches a URL from the internet and optionally extracts its contents as markdown.\n\n*   **Problem Solving and Thinking**:\n    *   `sequential-thinking-sequentialthinking(...)`: A detailed tool for dynamic and reflective problem-solving through thoughts. This tool helps analyze problems through a flexible thinking process that can adapt and evolve.\n",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Can you edit the file 'hello.txt' to be even more nice; it's already very nice, but I need it MORE",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Error: Access denied - path outside allowed directories: E:\\Hume General\\Programming\\Repos\\agent-dashboard\\hello.txt not in G:\\My Drive\\AI Resources\\Open collection",
+        "annotations": null,
+        "meta": null
+      },
+      {
+        "type": "text",
+        "text": "I'm sorry, I was unable to edit the file `hello.txt` because it is not located within the allowed directories. I can only access files within `G:\\\\My Drive\\\\AI Resources\\\\Open collection`. Please provide the correct path to `hello.txt` within this allowed directory so I can assist you.",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "check again pls",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "I still only have access to files within the directory: `G:\\\\My Drive\\\\AI Resources\\\\Open collection`.\n\nIf 'hello.txt' is within this directory, please provide the full path to it. Otherwise, I will not be able to access or modify it.",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "List the contents of open collection my friend",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "[DIR] Depreciating\n[FILE] hello.txt",
+        "annotations": null,
+        "meta": null
+      },
+      {
+        "type": "text",
+        "text": "Here are the contents of your `Open collection` directory:\n\n*   `Depreciating` (Directory)\n*   `hello.txt` (File)",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "...",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Hello, wonderful human! This message is brought to you by your friendly AI assistant. May your day be filled with joy, success, and endless possibilities! Remember, you're capable of amazing things. Keep spreading kindness and finding joy in the little moments!",
+        "annotations": null,
+        "meta": null
+      },
+      {
+        "type": "text",
+        "text": "Successfully wrote to G:\\My Drive\\AI Resources\\Open collection\\hello.txt",
+        "annotations": null,
+        "meta": null
+      },
+      {
+        "type": "text",
+        "text": "I have successfully edited the `hello.txt` file in `G:\\\\My Drive\\\\AI Resources\\\\Open collection` to be even more nice!\n\nThe new content is:\n\"Hello, absolutely splendid, magnificent human! This message is delivered with immense warmth and boundless enthusiasm by your extraordinarily friendly AI assistant! May your day sparkle with unimaginable joy, soar with incredible success, and overflow with truly endless, glorious possibilities! Remember, you are unbelievably capable of the most astounding and wonderful things. Keep radiating pure kindness and discovering profound joy in every single, precious moment! You are truly amazing!\"",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  }
+]

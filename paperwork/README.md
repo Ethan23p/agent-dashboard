@@ -4,6 +4,26 @@ A terminal client for the `fast-agent` framework.
 
 This project started as a way to have a more stable and transparent interface for agent development. The core is a Model-View-Controller (MVC) architecture, separating the application's state from its terminal UI and logic.
 
+## Project Structure
+
+```
+agent-dashboard/
+├── src/                           # Main application code
+│   ├── main.py                   # Application entry point
+│   ├── controller.py              # Business logic controller
+│   ├── model.py                   # Data model and state management
+│   ├── textual_view.py            # Textual-based UI
+│   ├── agent_registry.py          # Agent definitions and registry
+│   ├── commands.py                # Command implementations
+│   ├── secure_filesystem_server.py # MCP filesystem server
+│   └── fastagent.config.yaml     # FastAgent configuration
+├── tests/                         # Test suite
+├── paperwork/                     # Documentation and project files
+│   ├── README.md                  # This file
+│   └── CHANGELOG.md              # Version history
+└── [other directories]            # utils/, config/, data/, _context/
+```
+
 ## Technical Details
 
 The client is built with a few key ideas in mind:
@@ -18,6 +38,16 @@ The client is built with a few key ideas in mind:
 
 *   **Comprehensive Testing.** The application includes a complete testing suite with unit tests, integration tests, and retry mechanisms to ensure reliability and maintainability.
 
+## Running the Application
+
+```bash
+# From the project root
+python src/main.py
+
+# With specific agent
+python src/main.py --agent coding
+```
+
 ## Testing
 
 The project includes a comprehensive testing suite to ensure reliability and maintainability:
@@ -26,23 +56,23 @@ The project includes a comprehensive testing suite to ensure reliability and mai
 
 ```bash
 # Install test dependencies
-pip install pytest pytest-asyncio
+uv add --dev pytest pytest-asyncio
 
 # Run all tests
-python run_tests.py
+python -m pytest tests/
 
 # Run specific test file
-python run_tests.py test_model.py
+python -m pytest tests/test_model.py
 
 # Run with verbose output
-python run_tests.py -v
+python -m pytest tests/ -v
 ```
 
 ### Test Structure
 
-- **`test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
-- **`test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
-- **`test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
+- **`tests/test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
+- **`tests/test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
+- **`tests/test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
 
 ### Test Features
 
