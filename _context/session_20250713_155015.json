@@ -1,0 +1,24 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "q",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Please provide more details on what you would like me to do. \"q\" is not a valid request.",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  }
+]

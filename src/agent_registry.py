@@ -54,16 +54,17 @@ def _create_agent_from_definition(definition: dict) -> FastAgent:
     """Factory function to build a FastAgent instance from a dictionary."""
     
     # Use .get() to provide defaults for optional keys
+    agent_name = definition.get("name", "minimal")
     description = definition.get("description", "A fast-agent.")
     instruction = definition.get("instruction", "You are a helpful assistant.")
     servers = definition.get("servers", [])
     max_tokens = definition.get("max_tokens", 2048)
 
-    agent_instance = FastAgent(description)
+    agent_instance = FastAgent(description, config_path="src/fastagent.config.yaml")
 
     # The decorator needs a function to decorate, even a placeholder
     @agent_instance.agent(
-        name="agent",
+        name=agent_name,
         instruction=instruction,
         servers=servers,
         request_params=RequestParams(maxTokens=max_tokens),
@@ -76,18 +77,21 @@ def _create_agent_from_definition(definition: dict) -> FastAgent:
 # The registry is now BUILT dynamically from the definitions list.
 AGENT_REGISTRY = {}
 
+# Default agent (first one in the list)
+DEFAULT_AGENT = AGENT_DEFINITIONS[0]["name"] if AGENT_DEFINITIONS else "minimal"
+
 # Populate the registry
 for definition in AGENT_DEFINITIONS:
     agent_name = definition.get("name")
     if agent_name:
         AGENT_REGISTRY[agent_name] = _create_agent_from_definition(definition)
 
-def get_agent(agent_name: str = "minimal"):
+def get_agent(agent_name: str = None):
     """
     Get an agent by name from the registry.
     
     Args:
-        agent_name: The name of the agent to retrieve
+        agent_name: The name of the agent to retrieve. If None, uses DEFAULT_AGENT
         
     Returns:
         The FastAgent instance for the requested agent
@@ -95,6 +99,10 @@ def get_agent(agent_name: str = "minimal"):
     Raises:
         KeyError: If the agent name is not found in the registry
     """
+    
+    if agent_name is None:
+        agent_name = DEFAULT_AGENT
+    
     if agent_name not in AGENT_REGISTRY:
         available_agents = ", ".join(AGENT_REGISTRY.keys())
         raise KeyError(f"Agent '{agent_name}' not found. Available agents: {available_agents}")

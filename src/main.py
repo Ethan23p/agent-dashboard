@@ -6,7 +6,7 @@ import argparse
 from model import Model
 from textual_view import AgentDashboardApp
 from controller import Controller, SwitchAgentCommand
-from agent_registry import get_agent, list_available_agents
+from agent_registry import get_agent, list_available_agents, DEFAULT_AGENT
 
 def print_shutdown_message():
     """Prints a consistent shutdown message."""
@@ -18,7 +18,7 @@ def parse_arguments():
     parser.add_argument(
         "--agent", "-a",
         type=str,
-        default="minimal",
+        default=DEFAULT_AGENT,
         help=f"Select agent to use. Available: {', '.join(list_available_agents())}"
     )
     return parser.parse_args()
@@ -53,7 +53,8 @@ class Application:
             async with selected_agent.run() as agent_app:
                 model = Model()
                 controller = Controller(model)
-                controller.link_agent_app(agent_app)
+                # Pass the agent_name to the updated link_agent_app method
+                controller.link_agent_app(agent_app, agent_name)
                 
                 tui_app = AgentDashboardApp(model, controller, agent_name=agent_name)
                 switch_to_agent = await tui_app.run_async()

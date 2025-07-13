@@ -31,13 +31,11 @@ class Controller:
             'agents': ListAgentsCommand(),
         }
 
-        from agent_registry import get_agent
-        self.interpreter_agent_app = get_agent("interpreter")
-
-    def link_agent_app(self, agent_app: "AgentApp"):
-        """Link an agent app to the controller."""
+    def link_agent_app(self, agent_app: "AgentApp", agent_name: str):
+        """Link a specific agent from the agent_app to the controller."""
         self.agent_app = agent_app
-        self.agent = agent_app.agent
+        # Use getattr to dynamically get the correct agent attribute
+        self.agent = getattr(agent_app, agent_name)
 
     async def process_user_input(self, user_input: str):
         """

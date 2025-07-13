@@ -9,6 +9,7 @@ from textual.containers import Vertical
 
 from controller import ExitCommand, SwitchAgentCommand
 from model import Model, Interaction
+from agent_registry import DEFAULT_AGENT
 
 if TYPE_CHECKING:
     from controller import Controller
@@ -36,7 +37,7 @@ class AgentDashboardApp(App):
         ("ctrl+q", "quit", "Quit"),
     ]
 
-    def __init__(self, model: Model, controller: "Controller", agent_name: str = "agent"):
+    def __init__(self, model: Model, controller: "Controller", agent_name: str = DEFAULT_AGENT):
         super().__init__()
         self.model = model
         self.controller = controller
