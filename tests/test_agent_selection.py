@@ -4,6 +4,12 @@ Test script for agent selection functionality.
 """
 
 import asyncio
+import sys
+import os
+
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
 from agent_registry import get_agent, list_available_agents, AGENT_REGISTRY
 
 def test_agent_registry():

@@ -10,10 +10,6 @@ from textual.containers import Vertical
 from controller import ExitCommand, SwitchAgentCommand
 from model import Model, Interaction
 
-# TODO: make sure full conversation history with tool use, logging, thinking, is saved to the session log in _context
-# TODO: flesh out textual header, currently has very minimal agent indicator, thinking indicator; still needs to be intentionally designed
-# TODO: c
-
 if TYPE_CHECKING:
     from controller import Controller
 
