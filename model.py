@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Callable, List, Optional
 
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
+from mcp_agent.core.prompt import Prompt
 from rich.text import Text
 
 
@@ -53,7 +54,8 @@ class Model:
     """
     def __init__(self):
         self.session_id: str = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.conversation_log: list[Interaction] = []
+        self.interactions: list[Interaction] = []  # Renamed from conversation_log
+        self.conversation_history: list[PromptMessageMultipart] = []  # Agent conversation history
         self.is_thinking: bool = False
         self.last_error_message: Optional[str] = None
         self.last_success_message: Optional[str] = None
@@ -82,12 +84,31 @@ class Model:
 
     async def add_interaction(self, interaction: Interaction):
         """Add an interaction to the conversation log."""
-        self.conversation_log.append(interaction)
+        self.interactions.append(interaction)
+        await self._notify_listeners()
+
+    async def add_user_turn(self, user_input: str):
+        """Adds a user turn to both the agent history and the UI log."""
+        user_message = Prompt.user(user_input)
+        self.conversation_history.append(user_message)
+        user_interaction = Interaction(Text.from_markup(f"[bold blue]You:[/bold blue] {user_input}"), tag="user_prompt")
+        self.interactions.append(user_interaction)
+        await self._notify_listeners()
+
+    async def add_assistant_turn(self, response_message: PromptMessageMultipart):
+        """Adds an assistant turn to both the agent history and the UI log."""
+        self.conversation_history.append(response_message)
+        agent_interaction = Interaction(
+            content=Text.from_markup(f"[bold magenta]Agent:[/bold magenta] {response_message.last_text()}"),
+            tag="agent_response"
+        )
+        self.interactions.append(agent_interaction)
         await self._notify_listeners()
 
     async def clear_log(self):
         """Clear the conversation log."""
-        self.conversation_log = []
+        self.interactions = []
+        self.conversation_history = []
         await self._notify_listeners()
 
     async def set_thinking_status(self, is_thinking: bool):

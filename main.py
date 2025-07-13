@@ -6,7 +6,7 @@ import argparse
 from model import Model
 from textual_view import AgentDashboardApp
 from controller import Controller, SwitchAgentCommand
-from agent_definitions import get_agent, list_available_agents
+from agent_registry import get_agent, list_available_agents
 
 def print_shutdown_message():
     """Prints a consistent shutdown message."""

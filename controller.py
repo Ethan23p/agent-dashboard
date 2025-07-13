@@ -1,121 +1,14 @@
 # controller.py
 import asyncio
 import random
-import os
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
-from mcp_agent.core.prompt import Prompt
-from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
-from model import Model, save_history, load_history, Interaction
+from model import Model, Interaction
+from commands import ExitCommand, SwitchAgentCommand, ExitCommandImpl, SwitchCommand, ListAgentsCommand, SaveCommand, LoadCommand, ClearCommand
 from rich.text import Text
 
 if TYPE_CHECKING:
     from mcp_agent.core.agent_app import AgentApp
-
-
-class ExitCommand(Exception):
-    """Custom exception to signal a graceful exit from the main loop."""
-    pass
-
-
-class SwitchAgentCommand(Exception):
-    """Custom exception to signal switching to a different agent."""
-    def __init__(self, agent_name: str):
-        self.agent_name = agent_name
-        super().__init__(f"Switch to agent: {agent_name}")
-
-
-class Command(ABC):
-    """Abstract base class for all commands."""
-    @abstractmethod
-    async def execute(self, controller: "Controller", args: list[str]):
-        pass
-
-
-class ExitCommandImpl(Command):
-    """Command to exit the application."""
-    async def execute(self, controller: "Controller", args: list[str]):
-        from controller import ExitCommand as ExitException
-        raise ExitException()
-
-
-class SwitchCommand(Command):
-    """Command to switch to a different agent."""
-    async def execute(self, controller: "Controller", args: list[str]):
-        if not args:
-            error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Usage: /switch <agent_name>"), tag="error")
-            await controller.model.add_interaction(error_interaction)
-            return
-        
-        agent_name = args[0]
-        from agent_definitions import list_available_agents
-        available_agents = list_available_agents()
-        
-        if agent_name not in available_agents:
-            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Agent '{agent_name}' not found. Available agents: {', '.join(available_agents)}"), tag="error")
-            await controller.model.add_interaction(error_interaction)
-            return
-        
-        raise SwitchAgentCommand(agent_name)
-
-
-class ListAgentsCommand(Command):
-    """Command to list available agents."""
-    async def execute(self, controller: "Controller", args: list[str]):
-        from agent_definitions import list_available_agents
-        available_agents = list_available_agents()
-        success_interaction = Interaction(Text.from_markup(f"[bold green]Info:[/bold green] Available: {', '.join(available_agents)}"), tag="success")
-        await controller.model.add_interaction(success_interaction)
-
-
-class SaveCommand(Command):
-    """Command to save conversation history to a file."""
-    async def execute(self, controller: "Controller", args: list[str]):
-        target_path = args[0] if args else controller.model.user_preferences["auto_save_filename"]
-        
-        success = await save_history(controller.conversation_history, target_path)
-        if success:
-            success_interaction = Interaction(Text.from_markup(f"[bold green]Success:[/bold green] History saved to {os.path.basename(target_path)}"), tag="success")
-            await controller.model.add_interaction(success_interaction)
-        else:
-            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Failed to save history to {os.path.basename(target_path)}"), tag="error")
-            await controller.model.add_interaction(error_interaction)
-
-
-class LoadCommand(Command):
-    """Command to load conversation history from a file."""
-    async def execute(self, controller: "Controller", args: list[str]):
-        if not args:
-            error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Usage: /load <filename>"), tag="error")
-            await controller.model.add_interaction(error_interaction)
-            return
-        filename = args[0]
-        if not os.path.isabs(filename):
-            context_dir = controller.model._get_context_dir()
-            filename = os.path.join(context_dir, filename)
-        
-        loaded_history = await load_history(filename)
-        if loaded_history is not None:
-            controller.conversation_history = loaded_history
-            await controller.model.clear_log()
-            for message in loaded_history:
-                interaction = Interaction(Text.from_markup(f"[bold {'blue' if message.role == 'user' else 'magenta'}]{message.role.capitalize()}:[/] {message.last_text()}"))
-                await controller.model.add_interaction(interaction)
-            success_interaction = Interaction(Text.from_markup(f"[bold green]Success:[/bold green] History loaded from {os.path.basename(filename)}"), tag="success")
-            await controller.model.add_interaction(success_interaction)
-        else:
-            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Failed to load history from {os.path.basename(filename)}"), tag="error")
-            await controller.model.add_interaction(error_interaction)
-
-
-class ClearCommand(Command):
-    """Command to clear conversation history."""
-    async def execute(self, controller: "Controller", args: list[str]):
-        controller.conversation_history = []
-        await controller.model.clear_log()
-        success_interaction = Interaction(Text.from_markup("[bold green]Success:[/bold green] Conversation history cleared."), tag="success")
-        await controller.model.add_interaction(success_interaction)
 
 
 class Controller:
@@ -138,8 +31,7 @@ class Controller:
             'agents': ListAgentsCommand(),
         }
 
-        self.conversation_history: list[PromptMessageMultipart] = []
-        from agent_definitions import get_agent
+        from agent_registry import get_agent
         self.interpreter_agent_app = get_agent("interpreter")
 
     def link_agent_app(self, agent_app: "AgentApp"):
@@ -153,8 +45,6 @@ class Controller:
         It parses the input to determine if it's a command or a prompt
         for the agent.
         """
-        user_interaction = Interaction(Text.from_markup(f"[bold blue]You:[/bold blue] {user_input}"), tag="user_prompt")
-        await self.model.add_interaction(user_interaction)
         stripped_input = user_input.strip()
 
         if not stripped_input:
@@ -188,8 +78,8 @@ class Controller:
             await self.model.add_interaction(error_interaction)
             return
 
-        user_message = Prompt.user(user_prompt)
-        self.conversation_history.append(user_message)
+        # Tell the Model to update its state
+        await self.model.add_user_turn(user_prompt)
         await self.model.set_thinking_status(True)
 
         max_retries = 3
@@ -197,20 +87,17 @@ class Controller:
 
         for attempt in range(max_retries):
             try:
+                # Get the history FROM the model to send to the agent
                 response_message = await self.agent.generate(
-                    self.conversation_history
+                    self.model.conversation_history
                 )
-                self.conversation_history.append(response_message)
-                
-                agent_interaction = Interaction(
-                    content=Text.from_markup(f"[bold magenta]Agent:[/bold magenta] {response_message.last_text()}"),
-                    tag="agent_response"
-                )
-                await self.model.add_interaction(agent_interaction)
+                # Tell the Model to update its state with the response
+                await self.model.add_assistant_turn(response_message)
                 await self.model.set_thinking_status(False)
 
                 if self.model.user_preferences.get("auto_save_enabled"):
-                    await save_history(self.conversation_history, self.model.user_preferences["auto_save_filename"])
+                    from model import save_history
+                    await save_history(self.model.conversation_history, self.model.user_preferences["auto_save_filename"])
                 return
 
             except Exception as e:
@@ -221,7 +108,7 @@ class Controller:
                     await asyncio.sleep(delay)
                 else:
                     await self.model.set_thinking_status(False)
-                    if self.conversation_history: 
-                        self.conversation_history.pop()
+                    if self.model.conversation_history: 
+                        self.model.conversation_history.pop()
                     return
 

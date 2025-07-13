@@ -4,7 +4,7 @@ Test script for agent selection functionality.
 """
 
 import asyncio
-from agent_definitions import get_agent, list_available_agents, AGENT_REGISTRY
+from agent_registry import get_agent, list_available_agents, AGENT_REGISTRY
 
 def test_agent_registry():
     """Test the agent registry functionality."""

@@ -69,7 +69,7 @@ class AgentDashboardApp(App):
     def render_log(self) -> None:
         """Render the entire conversation log from the model."""
         self.log_widget.clear()
-        for interaction in self.model.conversation_log:
+        for interaction in self.model.interactions:
             self.log_widget.write(interaction.content)
 
     def update_header(self) -> None:
@@ -87,4 +87,12 @@ class AgentDashboardApp(App):
             return
         
         self.input_widget.clear()
-        self.run_worker(self.controller.process_user_input(user_input), exclusive=True)
+        
+        async def process_input_with_exit_handling():
+            try:
+                await self.controller.process_user_input(user_input)
+            except ExitCommand:
+                # Gracefully exit the application
+                self.exit()
+        
+        self.run_worker(process_input_with_exit_handling(), exclusive=True)
