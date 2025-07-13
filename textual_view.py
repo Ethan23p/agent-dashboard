@@ -10,16 +10,9 @@ from textual.containers import Vertical
 from controller import ExitCommand, SwitchAgentCommand
 from model import Model, Interaction
 
-class ElicitationPrompt(Static):
-    """A temporary widget to display the elicitation prompt."""
-    DEFAULT_CSS = """
-    ElicitationPrompt {
-        background: $boost; padding: 0 1; margin-bottom: 1; border: round yellow;
-    }
-    """
-
 if TYPE_CHECKING:
     from controller import Controller
+
 
 class AgentDashboardApp(App):
     """The Textual-based user interface for the agent dashboard."""
@@ -54,13 +47,12 @@ class AgentDashboardApp(App):
     def compose(self) -> ComposeResult:
         """Create the core UI widgets."""
         yield Header()
-        yield Vertical(id="elicitation-container")
         yield RichLog(id="chat-log", auto_scroll=True, wrap=True, highlight=True)
         yield Input(placeholder="Enter your prompt or type /help...")
         yield Footer()
 
     def on_mount(self) -> None:
-        """Called when the app is first mounted."""
+        """Initialize the app when first mounted."""
         self.log_widget = self.query_one(RichLog)
         self.input_widget = self.query_one(Input)
         self.input_widget.focus()
@@ -70,38 +62,18 @@ class AgentDashboardApp(App):
         self.log_widget.write("🤖 Agent is ready. Say 'Hi' or type a command.")
 
     async def on_model_update(self) -> None:
-        """
-        Called when the model state changes. Uses call_later to ensure UI updates
-        happen safely on the main app thread.
-        """
+        """Handle model state changes by updating the UI safely on the main thread."""
         self.call_later(self.render_log)
-        self.call_later(self.update_header) # This will handle thinking status
-        self.call_later(self.render_elicitation) # This handles the elicitation prompt widget
+        self.call_later(self.update_header)
 
     def render_log(self) -> None:
-        """Renders the entire log from the model."""
+        """Render the entire conversation log from the model."""
         self.log_widget.clear()
         for interaction in self.model.conversation_log:
             self.log_widget.write(interaction.content)
 
-    def render_elicitation(self) -> None:
-        """Renders or removes the elicitation prompt based on model state."""
-        container = self.query_one("#elicitation-container")
-        context = self.model.active_elicitation_context
-
-        has_prompt = len(container.children) > 0
-
-        if context and not has_prompt:
-            prompt_widget = ElicitationPrompt(f"🤖 {context.params.message}")
-            container.mount(prompt_widget)
-            self.input_widget.placeholder = "Respond to the agent's question..."
-            self.input_widget.focus()
-        elif not context and has_prompt:
-            container.remove_children()
-            self.input_widget.placeholder = "Enter your prompt or type /help..."
-
     def update_header(self) -> None:
-        """Updates the header based on the model's thinking status."""
+        """Update the header based on the model's thinking status."""
         if self.model.is_thinking:
             self.sub_title = "🤔 Thinking..."
         else:
@@ -109,6 +81,7 @@ class AgentDashboardApp(App):
 
     @on(Input.Submitted)
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle user input submission."""
         user_input = event.value
         if not user_input:
             return
