@@ -1,8 +1,22 @@
 # Agent Dashboard
 
-A terminal client for the `fast-agent` framework.
+A terminal client for the `fast-agent` framework with a modern Textual-based UI.
 
 This project started as a way to have a more stable and transparent interface for agent development. The core is a Model-View-Controller (MVC) architecture, separating the application's state from its terminal UI and logic.
+
+## Features
+
+- **Multiple Agent Support**: Switch between different specialized agents (minimal, coding, interpreter)
+- **Modern Textual UI**: Clean, responsive terminal interface with command support
+- **Context Management**: Comprehensive conversation history and state management
+- **Resilient Operation**: Error handling with retry logic and clean shutdown
+- **Command System**: Built-in commands for switching agents, saving/loading history, and more
+
+## Available Agents
+
+- **minimal**: General-purpose assistant with filesystem, fetch, and sequential-thinking capabilities
+- **coding**: Specialized coding assistant with enhanced debugging and code review features
+- **interpreter**: Structured data interpreter for JSON schema extraction
 
 ## Project Structure
 
@@ -19,9 +33,9 @@ agent-dashboard/
 │   └── fastagent.config.yaml     # FastAgent configuration
 ├── tests/                         # Test suite
 ├── paperwork/                     # Documentation and project files
-│   ├── README.md                  # This file
+│   ├── AGENT_SELECTION.md         # Agent selection guide
 │   └── CHANGELOG.md              # Version history
-└── [other directories]            # utils/, config/, data/, _context/
+└── _context/                      # Session history and context files
 ```
 
 ## Technical Details
@@ -42,11 +56,27 @@ The client is built with a few key ideas in mind:
 
 ```bash
 # From the project root
-python src/main.py
+uv run python src/main.py
 
 # With specific agent
-python src/main.py --agent coding
+uv run python src/main.py --agent coding
+
+# List available agents
+uv run python src/main.py --help
 ```
+
+## Using the Application
+
+Once the application starts, you'll see a clean terminal UI with:
+
+- **Chat Interface**: Type your messages and press Enter to send
+- **Command System**: Use commands starting with `/`:
+  - `/switch <agent>` - Switch to a different agent
+  - `/agents` - List available agents
+  - `/save [filename]` - Save conversation history
+  - `/load <filename>` - Load conversation history
+  - `/clear` - Clear current conversation
+  - `/exit` or `/quit` - Exit the application
 
 ## Testing
 
@@ -55,17 +85,14 @@ The project includes a comprehensive testing suite to ensure reliability and mai
 ### Running Tests
 
 ```bash
-# Install test dependencies
-uv add --dev pytest pytest-asyncio
-
 # Run all tests
-python -m pytest tests/
+uv run python tests/run_tests.py
 
 # Run specific test file
-python -m pytest tests/test_model.py
+uv run python -m pytest tests/test_model.py
 
 # Run with verbose output
-python -m pytest tests/ -v
+uv run python -m pytest tests/ -v
 ```
 
 ### Test Structure
@@ -73,12 +100,21 @@ python -m pytest tests/ -v
 - **`tests/test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
 - **`tests/test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
 - **`tests/test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
+- **`tests/test_agent_selection.py`**: Tests for agent switching functionality
 
 ### Test Features
 
-- **Retry Logic**: The controller now includes exponential backoff retry logic for agent calls, making the application more resilient to temporary network or API issues
+- **Retry Logic**: The controller includes exponential backoff retry logic for agent calls, making the application more resilient to temporary network or API issues
 - **Mock Testing**: All tests use mocks to avoid external dependencies while thoroughly testing the application logic
 - **Async Support**: Full async/await support for testing the asynchronous nature of the application
+
+## Configuration
+
+The application uses `src/fastagent.config.yaml` for configuration, including:
+
+- **Model Settings**: Default model and token limits
+- **MCP Servers**: Filesystem, fetch, memory, and other server configurations
+- **Logging**: Customizable logging and display options
 
 ## Project Journey
 
@@ -88,4 +124,5 @@ This client evolved through several stages:
 2.  Integrated a few powerful MCP servers (`filesystem`, `memory`, `fetch`), which revealed the potential of the protocol.
 3.  Shifted focus from thinking of `fast-agent` as a script runner to using it as a library within a client/server model.
 4.  Adopted the MVC pattern to cleanly separate concerns.
-5.  The result is this application—a stable tool for further agent development.
+5.  Added a modern Textual-based UI with agent switching capabilities.
+6.  The result is this application—a stable tool for further agent development.
