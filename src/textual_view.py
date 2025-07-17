@@ -6,8 +6,9 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Header, Input, RichLog, Static
 from textual.containers import Vertical
+from model import Task
 
-from controller import ExitCommand, SwitchAgentCommand
+from controller import Controller, ExitCommand, SwitchAgentCommand
 from model import Model, Interaction
 from agent_registry import DEFAULT_AGENT
 
@@ -37,10 +38,10 @@ class AgentDashboardApp(App):
         ("ctrl+q", "quit", "Quit"),
     ]
 
-    def __init__(self, model: Model, controller: "Controller", agent_name: str = DEFAULT_AGENT):
+    def __init__(self, agent_name: str = DEFAULT_AGENT):
         super().__init__()
-        self.model = model
-        self.controller = controller
+        self.model = Model()
+        self.controller = Controller(self.model, self)
         self.agent_name = agent_name
         self._last_rendered_message_count = 0
         self.model.register_listener(self.on_model_update)
@@ -68,13 +69,15 @@ class AgentDashboardApp(App):
         self.call_later(self.update_header)
 
     def render_log(self) -> None:
-        """Render the entire conversation log from the model."""
-        self.log_widget.clear()
-        for interaction in self.model.interactions:
-            self.log_widget.write(interaction.content)
+        # This now renders tasks instead of a simple chat log
+        if self._last_rendered_message_count != len(self.model.interactions):
+            self.log_widget.clear()
+            for interaction in self.model.interactions:
+                self.log_widget.write(interaction.content)
+            self._last_rendered_message_count = len(self.model.interactions)
 
     def update_header(self) -> None:
-        """Update the header based on the model's thinking status."""
+        # This could be enhanced to show number of running tasks, etc.
         if self.model.is_thinking:
             self.sub_title = "🤔 Thinking..."
         else:

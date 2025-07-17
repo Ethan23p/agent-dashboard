@@ -1,9 +1,9 @@
 # commands.py
 import os
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
-from model import Model, save_history, load_history, Interaction
+from model import Model, save_history, load_history, Interaction, Task
 from rich.text import Text
 
 if TYPE_CHECKING:
@@ -25,19 +25,19 @@ class SwitchAgentCommand(Exception):
 class Command(ABC):
     """Abstract base class for all commands."""
     @abstractmethod
-    async def execute(self, controller: "Controller", args: list[str]):
+    async def execute(self, controller: "Controller", args: List[str]):
         pass
 
 
 class ExitCommandImpl(Command):
     """Command to exit the application."""
-    async def execute(self, controller: "Controller", args: list[str]):
+    async def execute(self, controller: "Controller", args: List[str]):
         raise ExitCommand()
 
 
 class SwitchCommand(Command):
     """Command to switch to a different agent."""
-    async def execute(self, controller: "Controller", args: list[str]):
+    async def execute(self, controller: "Controller", args: List[str]):
         if not args:
             error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Usage: /switch <agent_name>"), tag="error")
             await controller.model.add_interaction(error_interaction)
@@ -57,7 +57,7 @@ class SwitchCommand(Command):
 
 class ListAgentsCommand(Command):
     """Command to list available agents."""
-    async def execute(self, controller: "Controller", args: list[str]):
+    async def execute(self, controller: "Controller", args: List[str]):
         from agent_registry import list_available_agents
         available_agents = list_available_agents()
         success_interaction = Interaction(Text.from_markup(f"[bold green]Info:[/bold green] Available: {', '.join(available_agents)}"), tag="success")
@@ -66,10 +66,17 @@ class ListAgentsCommand(Command):
 
 class SaveCommand(Command):
     """Command to save conversation history to a file."""
-    async def execute(self, controller: "Controller", args: list[str]):
+    async def execute(self, controller: "Controller", args: List[str]):
         target_path = args[0] if args else controller.model.user_preferences["auto_save_filename"]
-        
-        success = await save_history(controller.model.conversation_history, target_path)
+
+        # For now, save the history of the most recent task
+        last_task = controller.model.get_last_task()
+        if not last_task:
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] No tasks to save."), tag="error")
+            await controller.model.add_interaction(error_interaction)
+            return
+
+        success = await save_history(last_task.conversation_history, target_path)
         if success:
             success_interaction = Interaction(Text.from_markup(f"[bold green]Success:[/bold green] History saved to {os.path.basename(target_path)}"), tag="success")
             await controller.model.add_interaction(success_interaction)
@@ -80,24 +87,22 @@ class SaveCommand(Command):
 
 class LoadCommand(Command):
     """Command to load conversation history from a file."""
-    async def execute(self, controller: "Controller", args: list[str]):
+    async def execute(self, controller: "Controller", args: List[str]):
         if not args:
             error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Usage: /load <filename>"), tag="error")
             await controller.model.add_interaction(error_interaction)
             return
         filename = args[0]
-        if not os.path.isabs(filename):
-            context_dir = controller.model._get_context_dir()
-            filename = os.path.join(context_dir, filename)
-        
+
         loaded_history = await load_history(filename)
         if loaded_history is not None:
-            controller.model.conversation_history = loaded_history
-            await controller.model.clear_log()
-            for message in loaded_history:
-                interaction = Interaction(Text.from_markup(f"[bold {'blue' if message.role == 'user' else 'magenta'}]{message.role.capitalize()}:[/] {message.last_text()}"))
-                await controller.model.add_interaction(interaction)
-            success_interaction = Interaction(Text.from_markup(f"[bold green]Success:[/bold green] History loaded from {os.path.basename(filename)}"), tag="success")
+            # Create a new task from the loaded history
+            prompt = loaded_history[0].last_text() if loaded_history else "Loaded from file"
+            loaded_task = await controller.model.create_task(prompt, controller.model.default_agent_name)
+            loaded_task.conversation_history = loaded_history
+            loaded_task.status = "completed"
+            await controller.model.update_task(loaded_task.id, conversation_history=loaded_history, status="completed")
+            success_interaction = Interaction(Text.from_markup(f"[bold green]Success:[/bold green] History from {os.path.basename(filename)} loaded as new task."), tag="success")
             await controller.model.add_interaction(success_interaction)
         else:
             error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Failed to load history from {os.path.basename(filename)}"), tag="error")
@@ -106,7 +111,7 @@ class LoadCommand(Command):
 
 class ClearCommand(Command):
     """Command to clear conversation history."""
-    async def execute(self, controller: "Controller", args: list[str]):
-        await controller.model.clear_log()
-        success_interaction = Interaction(Text.from_markup("[bold green]Success:[/bold green] Conversation history cleared."), tag="success")
+    async def execute(self, controller: "Controller", args: List[str]):
+        await controller.model.clear_tasks()
+        success_interaction = Interaction(Text.from_markup("[bold green]Success:[/bold green] All tasks cleared."), tag="success")
         await controller.model.add_interaction(success_interaction) 

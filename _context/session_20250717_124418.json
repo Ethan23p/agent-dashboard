@@ -1,0 +1,24 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Analyze this data",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Please provide the data you would like me to analyze. You can paste it directly into our chat, or if it's in a file, tell me the file name and I can try to read it.",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  }
+]

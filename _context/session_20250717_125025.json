@@ -1,0 +1,24 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Analyze this data",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "This is a mocked response.",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  }
+]

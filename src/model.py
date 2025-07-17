@@ -2,9 +2,10 @@
 import asyncio
 import json
 import os
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Dict
 
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
 from mcp_agent.core.prompt import Prompt
@@ -38,6 +39,16 @@ class Interaction:
     content: Text
     tag: str = "message"
 
+@dataclass
+class Task:
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    prompt: str = ""
+    status: str = "pending"  # pending, running, completed, failed
+    agent_name: str = "minimal"
+    conversation_history: List[PromptMessageMultipart] = field(default_factory=list)
+    result: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
 
 # State classes
 from abc import ABC
@@ -54,8 +65,8 @@ class Model:
     """
     def __init__(self):
         self.session_id: str = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.interactions: list[Interaction] = []  # Renamed from conversation_log
-        self.conversation_history: list[PromptMessageMultipart] = []  # Agent conversation history
+        self.tasks: List[Task] = []
+        self.interactions: List[Interaction] = []  # For the UI log
         self.is_thinking: bool = False
         self.last_error_message: Optional[str] = None
         self.last_success_message: Optional[str] = None
@@ -66,6 +77,7 @@ class Model:
             "context_dir": "_context",
         }
         self.user_preferences["auto_save_filename"] = f"{self._get_context_dir()}/{self.session_id}.json"
+        self.default_agent_name: str = "minimal"
 
         self._listeners: List[Callable] = []
 
@@ -85,6 +97,51 @@ class Model:
     async def add_interaction(self, interaction: Interaction):
         """Add an interaction to the conversation log."""
         self.interactions.append(interaction)
+        await self._notify_listeners()
+    
+    async def create_task(self, prompt: str, agent_name: str) -> Task:
+        """Creates a new task, adds it to the model, and returns it."""
+        task = Task(prompt=prompt, agent_name=agent_name)
+        task.conversation_history.append(Prompt.user(prompt))
+        self.tasks.append(task)
+        interaction = Interaction(Text.from_markup(f"[bold yellow]New Task '{task.id[:8]}':[/] {prompt}"), tag="task_created")
+        await self.add_interaction(interaction)
+        return task
+
+    async def update_task(self, task_id: str, **updates):
+        """Updates attributes of a specific task."""
+        task = self.get_task(task_id)
+        if task:
+            for key, value in updates.items():
+                setattr(task, key, value)
+            if "status" in updates:
+                interaction = Interaction(Text.from_markup(f"[dim]Task '{task.id[:8]}' status changed to {task.status}[/]"), tag="task_status")
+                await self.add_interaction(interaction)
+        await self._notify_listeners()
+
+    async def add_assistant_turn_to_task(self, task_id: str, response_message: PromptMessageMultipart):
+        """Adds an assistant response to a specific task's history."""
+        task = self.get_task(task_id)
+        if task:
+            task.conversation_history.append(response_message)
+            agent_interaction = Interaction(
+                content=Text.from_markup(f"[bold magenta]Task '{task_id[:8]}':[/] {response_message.last_text()}"),
+                tag="agent_response"
+            )
+            await self.add_interaction(agent_interaction)
+
+    def get_task(self, task_id: str) -> Optional[Task]:
+        """Find a task by its ID."""
+        return next((task for task in self.tasks if task.id == task_id), None)
+
+    def get_last_task(self) -> Optional[Task]:
+        """Get the most recently created task."""
+        return self.tasks[-1] if self.tasks else None
+
+    async def clear_tasks(self):
+        """Clear all tasks and interactions."""
+        self.tasks = []
+        self.interactions = []
         await self._notify_listeners()
 
     async def add_user_turn(self, user_input: str):

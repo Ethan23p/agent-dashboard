@@ -102,7 +102,7 @@ def get_agent(agent_name: str = None):
     
     if agent_name is None:
         agent_name = DEFAULT_AGENT
-    
+
     if agent_name not in AGENT_REGISTRY:
         available_agents = ", ".join(AGENT_REGISTRY.keys())
         raise KeyError(f"Agent '{agent_name}' not found. Available agents: {available_agents}")
