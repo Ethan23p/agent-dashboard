@@ -71,17 +71,36 @@ class AgentDashboardApp(App):
     def render_log(self) -> None:
         # This now renders tasks instead of a simple chat log
         if self._last_rendered_message_count != len(self.model.interactions):
-            self.log_widget.clear()
-            for interaction in self.model.interactions:
-                self.log_widget.write(interaction.content)
+            # Render only new interactions to be more efficient
+            new_interactions = self.model.interactions[self._last_rendered_message_count:]
+            for interaction in new_interactions:
+                # Render primary dialogue and system messages, but hide verbose status updates.
+                if interaction.tag in ("user_prompt", "agent_response", "success", "error", "task_created"):
+                    content_text = interaction.content
+                    if isinstance(content_text, Text) and interaction.meta.get("task_id"):
+                        # Shorten the full task ID for display in the log
+                        full_task_id = interaction.meta["task_id"]
+                        parts = full_task_id.split('-')
+                        if len(parts) > 1:
+                            short_id = f"{parts[0][-6:]}-{parts[1][:4]}" # e.g., 125747-Hutt
+                            content_text = content_text.copy()
+                            content_text.plain = content_text.plain.replace(full_task_id, short_id)
+                    self.log_widget.write(content_text)
+
             self._last_rendered_message_count = len(self.model.interactions)
 
     def update_header(self) -> None:
-        # This could be enhanced to show number of running tasks, etc.
+        active_task = self.model.get_active_task()
+        if active_task:
+            persona = active_task.id.split('-')[1] if '-' in active_task.id else "Default"
+            active_task_id_display = f"Session: [bold cyan]{persona}[/]"
+        else:
+            active_task_id_display = "No Active Session"
+
         if self.model.is_thinking:
             self.sub_title = "🤔 Thinking..."
         else:
-            self.sub_title = f"Active Agent: [bold]{self.agent_name}[/]"
+            self.sub_title = f"Agent: [bold]{self.agent_name}[/] | {active_task_id_display}"
 
     @on(Input.Submitted)
     def on_input_submitted(self, event: Input.Submitted) -> None:

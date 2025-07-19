@@ -1,6 +1,7 @@
 # agent_definitions.py
 from mcp_agent.core.fastagent import FastAgent
 from mcp_agent.core.request_params import RequestParams
+from typing import Optional
 
 # This module's sole purpose is to define the agents for the application.
 # It acts as a catalog that can be imported by any client or runner.
@@ -50,20 +51,18 @@ AGENT_DEFINITIONS = [
     },
 ]
 
-def _create_agent_from_definition(definition: dict) -> FastAgent:
-    """Factory function to build a FastAgent instance from a dictionary."""
+def _register_agent_from_definition(agent_app: FastAgent, definition: dict) -> None:
+    """Factory function to register an agent with a FastAgent instance."""
     
     # Use .get() to provide defaults for optional keys
     agent_name = definition.get("name", "minimal")
-    description = definition.get("description", "A fast-agent.")
     instruction = definition.get("instruction", "You are a helpful assistant.")
     servers = definition.get("servers", [])
     max_tokens = definition.get("max_tokens", 2048)
 
-    agent_instance = FastAgent(description, config_path="src/fastagent.config.yaml")
-
     # The decorator needs a function to decorate, even a placeholder
-    @agent_instance.agent(
+    # This registers the agent with the *shared* agent_app instance
+    @agent_app.agent(
         name=agent_name,
         instruction=instruction,
         servers=servers,
@@ -71,11 +70,12 @@ def _create_agent_from_definition(definition: dict) -> FastAgent:
         use_history=False
     )
     async def placeholder_func(): pass
-    
-    return agent_instance
 
 # The registry is now BUILT dynamically from the definitions list.
-AGENT_REGISTRY = {}
+AGENT_REGISTRY: dict[str, FastAgent] = {}
+
+# Create a single, shared FastAgent application instance
+SHARED_AGENT_APP = FastAgent("Agent Dashboard", config_path="src/fastagent.config.yaml")
 
 # Default agent (first one in the list)
 DEFAULT_AGENT = AGENT_DEFINITIONS[0]["name"] if AGENT_DEFINITIONS else "minimal"
@@ -84,9 +84,10 @@ DEFAULT_AGENT = AGENT_DEFINITIONS[0]["name"] if AGENT_DEFINITIONS else "minimal"
 for definition in AGENT_DEFINITIONS:
     agent_name = definition.get("name")
     if agent_name:
-        AGENT_REGISTRY[agent_name] = _create_agent_from_definition(definition)
+        _register_agent_from_definition(SHARED_AGENT_APP, definition)
+        AGENT_REGISTRY[agent_name] = SHARED_AGENT_APP
 
-def get_agent(agent_name: str = None):
+def get_agent(agent_name: Optional[str] = None):
     """
     Get an agent by name from the registry.
     

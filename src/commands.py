@@ -115,3 +115,41 @@ class ClearCommand(Command):
         await controller.model.clear_tasks()
         success_interaction = Interaction(Text.from_markup("[bold green]Success:[/bold green] All tasks cleared."), tag="success")
         await controller.model.add_interaction(success_interaction) 
+
+
+class TaskCommand(Command):
+    """Parent command for task management."""
+    async def execute(self, controller: "Controller", args: List[str]):
+        if not args:
+            error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Usage: /task <new|switch|list> [args]"), tag="error")
+            await controller.model.add_interaction(error_interaction)
+            return
+        
+        subcommand = args[0]
+        sub_args = args[1:]
+
+        if subcommand == "new":
+            prompt = " ".join(sub_args) or "New task started."
+            await controller._create_and_run_task(prompt)
+        elif subcommand == "switch":
+            if not sub_args:
+                error_interaction = Interaction(Text.from_markup("[bold red]Error:[/bold red] Usage: /task switch <task_id>"), tag="error")
+                await controller.model.add_interaction(error_interaction)
+                return
+            task_id_prefix = sub_args[0]
+            task_to_switch = next((t for t in controller.model.tasks if t.id.startswith(task_id_prefix)), None)
+            if task_to_switch:
+                controller.model.active_task_id = task_to_switch.id
+                success_interaction = Interaction(Text.from_markup(f"[bold green]Success:[/bold green] Switched to task {task_to_switch.id}"), tag="success")
+                await controller.model.add_interaction(success_interaction)
+                await controller.model._notify_listeners() # Force header update
+            else:
+                error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Task with prefix '{task_id_prefix}' not found."), tag="error")
+                await controller.model.add_interaction(error_interaction)
+        elif subcommand == "list":
+            task_list = "\n".join([f"- {task.id} ({task.status}): {task.prompt[:50]}..." for task in controller.model.tasks])
+            info_interaction = Interaction(Text.from_markup(f"[bold]Available Tasks:[/bold]\n{task_list}"), tag="info")
+            await controller.model.add_interaction(info_interaction)
+        else:
+            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Unknown task command: {subcommand}"), tag="error")
+            await controller.model.add_interaction(error_interaction) 

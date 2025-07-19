@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, List, Optional, Dict
+import itertools
 
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
 from mcp_agent.core.prompt import Prompt
@@ -36,18 +37,20 @@ async def load_history(filepath: str) -> list[PromptMessageMultipart] | None:
 
 @dataclass
 class Interaction:
-    content: Text
+    content: Text | PromptMessageMultipart
     tag: str = "message"
+    meta: Dict = field(default_factory=dict)
 
 @dataclass
 class Task:
-    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    id: str = field(default_factory=str) # Will be set by our custom generator
     prompt: str = ""
     status: str = "pending"  # pending, running, completed, failed
     agent_name: str = "minimal"
     conversation_history: List[PromptMessageMultipart] = field(default_factory=list)
     result: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
+AGENT_PERSONAS = ["Hutter", "Aasimov", "Heinlein", "Chiang", "Borges"]
 
 
 # State classes
@@ -70,7 +73,8 @@ class Model:
         self.is_thinking: bool = False
         self.last_error_message: Optional[str] = None
         self.last_success_message: Optional[str] = None
-        
+        self.active_task_id: Optional[str] = None
+        self.persona_cycler = itertools.cycle(AGENT_PERSONAS)
         # Initialize user preferences
         self.user_preferences: dict = {
             "auto_save_enabled": True,
@@ -78,7 +82,6 @@ class Model:
         }
         self.user_preferences["auto_save_filename"] = f"{self._get_context_dir()}/{self.session_id}.json"
         self.default_agent_name: str = "minimal"
-
         self._listeners: List[Callable] = []
 
     def _get_context_dir(self) -> str:
@@ -99,11 +102,30 @@ class Model:
         self.interactions.append(interaction)
         await self._notify_listeners()
     
+    async def add_interaction_from_message(self, message: PromptMessageMultipart, tag: str = "message"):
+        """Helper to create and add an Interaction from a PromptMessageMultipart."""
+        content_text = message.last_text() or ""
+        interaction = Interaction(
+            content=Text.from_markup(content_text),
+            tag=tag,
+            meta={"timestamp": datetime.now().isoformat()}
+        )
+        await self.add_interaction(interaction)
+    
+    def _generate_task_id(self) -> str:
+        """Generates a new fun, thematic task ID."""
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        persona = next(self.persona_cycler)
+        short_uuid = uuid.uuid4().hex[:6]
+        return f"{timestamp}-{persona}-{short_uuid}"
+
     async def create_task(self, prompt: str, agent_name: str) -> Task:
         """Creates a new task, adds it to the model, and returns it."""
-        task = Task(prompt=prompt, agent_name=agent_name)
+        task_id = self._generate_task_id()
+        task = Task(id=task_id, prompt=prompt, agent_name=agent_name)
         task.conversation_history.append(Prompt.user(prompt))
         self.tasks.append(task)
+        self.active_task_id = task.id # The new task becomes active
         interaction = Interaction(Text.from_markup(f"[bold yellow]New Task '{task.id[:8]}':[/] {prompt}"), tag="task_created")
         await self.add_interaction(interaction)
         return task
@@ -118,6 +140,16 @@ class Model:
                 interaction = Interaction(Text.from_markup(f"[dim]Task '{task.id[:8]}' status changed to {task.status}[/]"), tag="task_status")
                 await self.add_interaction(interaction)
         await self._notify_listeners()
+
+    async def update_task_history(self, task_id: str, new_history_parts: List[PromptMessageMultipart]):
+        """Replaces the last user prompt with the full turn history from the agent."""
+        task = self.get_task(task_id)
+        if task:
+            # Remove the last simple user prompt
+            if task.conversation_history and task.conversation_history[-1].role == "user":
+                task.conversation_history.pop()
+            # Add the comprehensive history parts
+            task.conversation_history.extend(new_history_parts)
 
     async def add_assistant_turn_to_task(self, task_id: str, response_message: PromptMessageMultipart):
         """Adds an assistant response to a specific task's history."""
@@ -172,3 +204,26 @@ class Model:
         """Set the agent's thinking status."""
         self.is_thinking = is_thinking
         await self._notify_listeners()
+
+    async def save_task_history(self, task: Optional[Task]):
+        """Saves a single task's full history to its designated auto-save file."""
+        if task:
+            # This is the fix: we save the task's full conversation_history.
+            await save_history(
+                task.conversation_history, 
+                self.user_preferences["auto_save_filename"]
+            )
+
+    async def add_user_turn_to_task(self, task_id: str, prompt: str):
+        """Adds a new user prompt to an existing task's history."""
+        task = self.get_task(task_id)
+        if task:
+            task.prompt = prompt # Update the task's prompt to the latest one
+            task.conversation_history.append(Prompt.user(prompt))
+
+    def get_active_task(self) -> Optional[Task]:
+        """Get the currently active task."""
+        if self.active_task_id:
+            return self.get_task(self.active_task_id)
+        # Fallback to last task if no active one is set
+        return self.get_last_task()

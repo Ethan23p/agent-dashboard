@@ -29,7 +29,6 @@ class Application:
     The main application class that orchestrates the Model, View, and Controller.
     """
     def __init__(self, initial_agent_name: str):
-        # The TUI now creates the Model and Controller
         self.initial_agent_name = initial_agent_name
 
     async def run(self):

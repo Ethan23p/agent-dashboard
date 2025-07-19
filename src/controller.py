@@ -2,8 +2,9 @@
 import asyncio
 import random
 from typing import TYPE_CHECKING, Dict
+from datetime import datetime
 
-from commands import ExitCommand, SwitchAgentCommand, ExitCommandImpl, SwitchCommand, ListAgentsCommand, SaveCommand, LoadCommand, ClearCommand
+from commands import ExitCommand, SwitchAgentCommand, ExitCommandImpl, SwitchCommand, ListAgentsCommand, SaveCommand, LoadCommand, ClearCommand, TaskCommand
 from model import Model, Interaction, Task
 from rich.text import Text
 from textual import work
@@ -30,6 +31,7 @@ class Controller:
             'clear': ClearCommand(),
             'switch': SwitchCommand(),
             'agents': ListAgentsCommand(),
+            'task': TaskCommand(),
         }
 
     async def process_user_input(self, user_input: str):
@@ -46,7 +48,7 @@ class Controller:
         if stripped_input.lower().startswith('/'):
             await self._handle_command(stripped_input)
         else:
-            await self._create_and_run_task(stripped_input)
+            await self._continue_or_create_task(stripped_input)
 
     async def _handle_command(self, command_str: str):
         """Parse and execute client-side commands."""
@@ -61,12 +63,20 @@ class Controller:
             error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Unknown command: /{command_name}"), tag="error")
             await self.model.add_interaction(error_interaction)
 
-    async def _create_and_run_task(self, user_prompt: str):
+    async def _continue_or_create_task(self, user_prompt: str):
         """
-        Creates a new task and starts a background worker to execute it.
+        Continues the active task or creates a new one, then starts a worker.
         """
-        new_task = await self.model.create_task(user_prompt, self.model.default_agent_name)
-        self.app.run_worker(self._execute_task(new_task), exclusive=False, group="agent_tasks")
+        task = self.model.get_active_task()
+        if task and task.status in ("completed", "pending", "failed"):
+            # Continue the existing active task
+            await self.model.add_user_turn_to_task(task.id, user_prompt)
+        else:
+            # No suitable task to continue, create a new one
+            task = await self.model.create_task(user_prompt, self.model.default_agent_name)
+        
+        if task:
+            self.app.run_worker(self._execute_task(task), exclusive=False, group="agent_tasks")
 
     async def _execute_task(self, task: Task):
         """
@@ -83,17 +93,35 @@ class Controller:
 
         for attempt in range(max_retries):
             try:
+                # Add the clean user prompt to the UI log
+                user_interaction = Interaction(
+                    content=Text.from_markup(f"[bold blue]You:[/bold blue] {task.prompt}"),
+                    tag="user_prompt",
+                    meta={"timestamp": datetime.now().isoformat(), "task_id": task.id}
+                )
+                await self.model.add_interaction(user_interaction)
+
                 async with agent_instance.run() as agent_app:
-                    agent = getattr(agent_app, task.agent_name)
-                    response_message = await agent.generate(task.conversation_history)
-                    await self.model.add_assistant_turn_to_task(task.id, response_message)
-                    await self.model.update_task(task.id, status="completed", result=response_message.last_text())
+                    agent = agent_app[task.agent_name]
+                    
+                    history_before = len(task.conversation_history)
+                    final_response_message = await agent.generate(task.conversation_history)
+                    full_turn_history = agent.message_history[history_before:]
+                    
+                    await self.model.update_task_history(task.id, full_turn_history)
+                    await self.model.update_task(task.id, status="completed", result=final_response_message.last_text())
+
+                    agent_interaction = Interaction(
+                        content=Text.from_markup(f"[bold magenta]Agent:[/bold magenta] {final_response_message.last_text()}"),
+                        tag="agent_response",
+                        meta={"timestamp": datetime.now().isoformat(), "task_id": task.id}
+                    )
+                    await self.model.add_interaction(agent_interaction)
 
                 if self.model.user_preferences.get("auto_save_enabled"):
                     updated_task = self.model.get_task(task.id)
-                    if updated_task:
-                        from model import save_history
-                        await save_history(updated_task.conversation_history, self.model.user_preferences["auto_save_filename"])
+                    if updated_task is not None:
+                        await self.model.save_task_history(updated_task)
                 await self.model.set_thinking_status(False)
                 return
 

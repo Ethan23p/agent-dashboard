@@ -1,0 +1,42 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Hey! Do you see the 'hello.txt' file in your directory?",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Error: Access denied - path outside allowed directories: E:\\Hume General\\Programming\\Repos\\agent-dashboard not in G:\\My Drive\\AI Resources\\Open collection",
+        "annotations": null,
+        "meta": null
+      },
+      {
+        "type": "text",
+        "text": "Allowed directories:\nG:\\My Drive\\AI Resources\\Open collection",
+        "annotations": null,
+        "meta": null
+      },
+      {
+        "type": "text",
+        "text": "[DIR] Depreciating\n[FILE] hello.txt",
+        "annotations": null,
+        "meta": null
+      },
+      {
+        "type": "text",
+        "text": "Yes, I see the 'hello.txt' file.",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  }
+]

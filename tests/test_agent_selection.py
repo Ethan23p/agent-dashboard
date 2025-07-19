@@ -35,26 +35,8 @@ def test_agent_registry():
     
     print("All agent registry tests passed!")
 
-def test_agent_characteristics():
-    """Test that agents have different characteristics."""
-    print("\nTesting Agent Characteristics...")
-    
-    minimal_agent = get_agent("minimal")
-    coding_agent = get_agent("coding")
-    
-    # Check that they're different instances
-    assert minimal_agent != coding_agent, "Agents should be different instances"
-    
-    # Check that they have different names
-    assert minimal_agent.name != coding_agent.name, "Agents should have different names"
-    
-    print("✓ Agents have different characteristics")
-    print(f"  Minimal agent: {minimal_agent.name}")
-    print(f"  Coding agent: {coding_agent.name}")
-    
-    print("All agent characteristics tests passed!")
+# Remove outdated test for agent characteristics (instances/names)
 
 if __name__ == "__main__":
     test_agent_registry()
-    test_agent_characteristics()
     print("\n🎉 All tests passed! Agent selection system is working correctly.") 
