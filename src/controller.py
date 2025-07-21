@@ -84,7 +84,7 @@ class Controller:
         for attempt in range(max_retries):
             try:
                 async with agent_instance.run() as agent_app:
-                    agent = getattr(agent_app, task.agent_name)
+                    agent = agent_app[task.agent_name]
                     response_message = await agent.generate(task.conversation_history)
                     await self.model.add_assistant_turn_to_task(task.id, response_message)
                     await self.model.update_task(task.id, status="completed", result=response_message.last_text())

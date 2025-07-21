@@ -1,6 +1,7 @@
 # agent_definitions.py
 from mcp_agent.core.fastagent import FastAgent
 from mcp_agent.core.request_params import RequestParams
+from typing import Optional
 
 # This module's sole purpose is to define the agents for the application.
 # It acts as a catalog that can be imported by any client or runner.
@@ -86,7 +87,7 @@ for definition in AGENT_DEFINITIONS:
     if agent_name:
         AGENT_REGISTRY[agent_name] = _create_agent_from_definition(definition)
 
-def get_agent(agent_name: str = None):
+def get_agent(agent_name: Optional[str] = None):
     """
     Get an agent by name from the registry.
     

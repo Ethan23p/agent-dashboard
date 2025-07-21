@@ -22,8 +22,12 @@ mock_agent_object = AsyncMock()
 mock_agent_object.generate = AsyncMock(
     return_value=Prompt.assistant("This is a mocked response.")
 )
-# Make the context manager return the agent object
-mock_agent_context.__aenter__.return_value = MagicMock(minimal=mock_agent_object)
+# Create a mock for the agent_app object that supports dictionary access
+mock_agent_app = MagicMock()
+mock_agent_app.__getitem__.return_value = mock_agent_object
+
+# Make the context manager return our new mock agent_app
+mock_agent_context.__aenter__.return_value = mock_agent_app
 
 
 @pytest.mark.asyncio
