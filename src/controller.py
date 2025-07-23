@@ -1,27 +1,31 @@
-# controller.py
 import asyncio
+import logging
 import random
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 
-from commands import ExitCommand, SwitchAgentCommand, ExitCommandImpl, SwitchCommand, ListAgentsCommand, SaveCommand, LoadCommand, ClearCommand
-from model import Model, Interaction, Task
-from rich.text import Text
-from textual import work
 from agent_registry import get_agent
+from commands import (ClearCommand, ExitCommand, ExitCommandImpl,
+                      ListAgentsCommand, LoadCommand, SaveCommand,
+                      SwitchAgentCommand, SwitchCommand)
+from mcp_agent.core.prompt import Prompt
+from model import Interaction
+from primitives import Session
+from rich.text import Text
 
 if TYPE_CHECKING:
     from textual_view import AgentDashboardApp
+    from model import Model
 
+logger = logging.getLogger(__name__)
 
 class Controller:
     """
-    The Controller contains the application's business logic. It responds
-    to user input from the View and orchestrates interactions between the
-    Model and the Agent.
+    Contains the application's business logic, responding to user input from
+    the View and orchestrating interactions between the Model and the Agent.
     """
-    def __init__(self, model: Model, app: "AgentDashboardApp"):
+    def __init__(self, model: "Model", app: "AgentDashboardApp"):
         self.model = model
-        self.app = app  # Store a reference to the app instance
+        self.app = app
         self.command_map = {
             'exit': ExitCommandImpl(),
             'quit': ExitCommandImpl(),
@@ -34,77 +38,107 @@ class Controller:
 
     async def process_user_input(self, user_input: str):
         """
-        The main entry point for handling actions initiated by the user.
-        It parses the input to determine if it's a command or a prompt
-        for the agent.
+        Handles user input, routing to either a command handler or the agent.
         """
         stripped_input = user_input.strip()
-
         if not stripped_input:
             return
 
         if stripped_input.lower().startswith('/'):
             await self._handle_command(stripped_input)
         else:
-            await self._create_and_run_task(stripped_input)
+            await self._handle_prompt(stripped_input)
 
     async def _handle_command(self, command_str: str):
-        """Parse and execute client-side commands."""
-        parts = command_str.lower().split()
-        command_name = parts[0][1:]
+        """Parses and executes client-side commands."""
+        parts = command_str.split()
+        command_name = parts[0][1:].lower()
         args = parts[1:]
 
         command = self.command_map.get(command_name)
         if command:
             await command.execute(self, args)
         else:
-            error_interaction = Interaction(Text.from_markup(f"[bold red]Error:[/bold red] Unknown command: /{command_name}"), tag="error")
-            await self.model.add_interaction(error_interaction)
+            error_interaction = Interaction(
+                Text.from_markup(f"[bold red]Error:[/bold red] Unknown command: /{command_name}"),
+                metadata={"user-facing": True, "type": "error"}
+            )
+            await self.model.add_interaction_to_active_session(error_interaction)
 
-    async def _create_and_run_task(self, user_prompt: str):
-        """
-        Creates a new task and starts a background worker to execute it.
-        """
-        new_task = await self.model.create_task(user_prompt, self.model.default_agent_name)
-        self.app.run_worker(self._execute_task(new_task), exclusive=False, group="agent_tasks")
+    async def _handle_prompt(self, user_prompt: str):
+        """Handles a user prompt by creating an interaction and calling the agent."""
+        user_interaction = Interaction(
+            contents=[Prompt.user(user_prompt)],
+            metadata={"user-facing": True, "type": "user_prompt"}
+        )
+        await self.model.add_interaction_to_active_session(user_interaction)
 
-    async def _execute_task(self, task: Task):
+        if self.model.user_preferences.get("auto_save_enabled"):
+            await self.model.save_active_session()
+
+        # Run the agent turn in the background to keep the UI responsive.
+        self.app.run_worker(self._execute_agent_turn(), exclusive=False, group="agent_turns")
+
+    async def _execute_agent_turn(self):
         """
-        The background worker that executes a single agent task.
-        This includes the full retry logic and state management for the task.
+        Executes a single agent turn with retry logic for resilience.
         """
+        active_session = self.model.get_active_session()
+        if not active_session:
+            logger.error("Attempted to execute agent turn with no active session.")
+            return
+
         await self.model.set_thinking_status(True)
-        await self.model.update_task(task.id, status="running")
 
         max_retries = 3
         base_delay = 1.0
 
-        agent_instance = get_agent(task.agent_name)
+        try:
+            agent_instance = get_agent(active_session.agent_name)
+        except KeyError as e:
+            error_interaction = Interaction(
+                Text.from_markup(f"[bold red]Configuration Error:[/bold red] {e}"),
+                metadata={"user-facing": True, "type": "error"}
+            )
+            await self.model.add_interaction_to_active_session(error_interaction)
+            await self.model.set_thinking_status(False)
+            return
 
         for attempt in range(max_retries):
             try:
+                agent_history = self.model.get_agent_history_for_active_session()
+
                 async with agent_instance.run() as agent_app:
-                    agent = agent_app[task.agent_name]
-                    response_message = await agent.generate(task.conversation_history)
-                    await self.model.add_assistant_turn_to_task(task.id, response_message)
-                    await self.model.update_task(task.id, status="completed", result=response_message.last_text())
+                    agent = agent_app[active_session.agent_name]
+                    response_message = await agent.generate(agent_history)
+
+                agent_interaction = Interaction(
+                    contents=[response_message],
+                    metadata={"user-facing": True, "type": "agent_response", "agent_name": active_session.agent_name}
+                )
+                await self.model.add_interaction_to_active_session(agent_interaction)
 
                 if self.model.user_preferences.get("auto_save_enabled"):
-                    updated_task = self.model.get_task(task.id)
-                    if updated_task:
-                        from model import save_history
-                        await save_history(updated_task.conversation_history, self.model.user_preferences["auto_save_filename"])
+                    await self.model.save_active_session()
+
                 await self.model.set_thinking_status(False)
                 return
 
             except Exception as e:
+                logger.error(f"Agent turn failed on attempt {attempt + 1}/{max_retries}", exc_info=True)
                 if attempt < max_retries - 1:
                     delay = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
-                    error_interaction = Interaction(Text.from_markup(f"[bold red]Task '{task.id[:8]}' failed (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.2f}s...[/]"), tag="error")
-                    await self.model.add_interaction(error_interaction)
+                    retry_interaction = Interaction(
+                        Text.from_markup(f"[bold yellow]Agent Error (attempt {attempt + 1}):[/] Retrying in {delay:.2f}s..."),
+                        metadata={"user-facing": True, "type": "warning"}
+                    )
+                    await self.model.add_interaction_to_active_session(retry_interaction)
                     await asyncio.sleep(delay)
                 else:
-                    await self.model.update_task(task.id, status="failed", result=str(e))
+                    final_error_interaction = Interaction(
+                        Text.from_markup(f"[bold red]Agent Error:[/bold red] Failed after {max_retries} attempts. Please try again.\nDetails: {e}"),
+                        metadata={"user-facing": True, "type": "error"}
+                    )
+                    await self.model.add_interaction_to_active_session(final_error_interaction)
                     await self.model.set_thinking_status(False)
                     return
-

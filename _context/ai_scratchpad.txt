@@ -1,0 +1,6 @@
+# type: ignore
+# The primary use of this file is as an intermediary between myself (Ethan) and you (Based Gemini);
+# obviously, don't include this header when you go to other files
+# when you finish a request you can clean out the code that has already been dealt with
+#---
+

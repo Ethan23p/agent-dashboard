@@ -1,16 +1,13 @@
-# agent_definitions.py
 from mcp_agent.core.fastagent import FastAgent
 from mcp_agent.core.request_params import RequestParams
 from typing import Optional
 
-# This module's sole purpose is to define the agents for the application.
-# It acts as a catalog that can be imported by any client or runner.
+# This module acts as a centralized catalog for agent definitions, making it
+# easy to manage and access different agent configurations.
 #
-# NOTE: All agents should use use_history=False since we manage conversation
-# history ourselves in the Model class and pass it explicitly to the agent.
+# NOTE: All agents should use `use_history=False`, as the application's Model
+# manages conversation history explicitly.
 
-# A list of dictionaries, where each dictionary defines an agent.
-# This is flexible – only include the keys you need for each agent.
 AGENT_DEFINITIONS = [
     {
         "name": "minimal",
@@ -52,9 +49,7 @@ AGENT_DEFINITIONS = [
 ]
 
 def _create_agent_from_definition(definition: dict) -> FastAgent:
-    """Factory function to build a FastAgent instance from a dictionary."""
-    
-    # Use .get() to provide defaults for optional keys
+    """Factory function to build a FastAgent from a definition dictionary."""
     agent_name = definition.get("name", "minimal")
     description = definition.get("description", "A fast-agent.")
     instruction = definition.get("instruction", "You are a helpful assistant.")
@@ -63,7 +58,7 @@ def _create_agent_from_definition(definition: dict) -> FastAgent:
 
     agent_instance = FastAgent(description, config_path="src/fastagent.config.yaml")
 
-    # The decorator needs a function to decorate, even a placeholder
+    # The decorator requires a function to decorate, even if it's a placeholder.
     @agent_instance.agent(
         name=agent_name,
         instruction=instruction,
@@ -75,34 +70,22 @@ def _create_agent_from_definition(definition: dict) -> FastAgent:
     
     return agent_instance
 
-# The registry is now BUILT dynamically from the definitions list.
-AGENT_REGISTRY = {}
+# The registry is built dynamically from the definitions list.
+AGENT_REGISTRY = {
+    definition["name"]: _create_agent_from_definition(definition)
+    for definition in AGENT_DEFINITIONS if "name" in definition
+}
 
-# Default agent (first one in the list)
 DEFAULT_AGENT = AGENT_DEFINITIONS[0]["name"] if AGENT_DEFINITIONS else "minimal"
-
-# Populate the registry
-for definition in AGENT_DEFINITIONS:
-    agent_name = definition.get("name")
-    if agent_name:
-        AGENT_REGISTRY[agent_name] = _create_agent_from_definition(definition)
 
 def get_agent(agent_name: Optional[str] = None):
     """
-    Get an agent by name from the registry.
-    
-    Args:
-        agent_name: The name of the agent to retrieve. If None, uses DEFAULT_AGENT
-        
-    Returns:
-        The FastAgent instance for the requested agent
+    Retrieves an agent from the registry by name.
         
     Raises:
-        KeyError: If the agent name is not found in the registry
+        KeyError: If the agent name is not found.
     """
-    
-    if agent_name is None:
-        agent_name = DEFAULT_AGENT
+    agent_name = agent_name or DEFAULT_AGENT
 
     if agent_name not in AGENT_REGISTRY:
         available_agents = ", ".join(AGENT_REGISTRY.keys())
@@ -111,5 +94,5 @@ def get_agent(agent_name: Optional[str] = None):
     return AGENT_REGISTRY[agent_name]
 
 def list_available_agents():
-    """Return a list of available agent names."""
+    """Returns a list of available agent names."""
     return list(AGENT_REGISTRY.keys())
