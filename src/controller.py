@@ -5,11 +5,10 @@ from typing import TYPE_CHECKING
 
 from agent_registry import get_agent
 from commands import (ClearCommand, ExitCommand, ExitCommandImpl,
-                      ListAgentsCommand, LoadCommand, SaveCommand,
-                      SwitchAgentCommand, SwitchCommand)
+                        ListAgentsCommand, LoadCommand, SaveCommand,
+                        SwitchAgentCommand, SwitchCommand)
 from mcp_agent.core.prompt import Prompt
-from model import Interaction
-from primitives import Session
+from primitives import Interaction, Session
 from rich.text import Text
 
 if TYPE_CHECKING:
@@ -77,7 +76,7 @@ class Controller:
             await self.model.save_active_session()
 
         # Run the agent turn in the background to keep the UI responsive.
-        self.app.run_worker(self._execute_agent_turn(), exclusive=False, group="agent_turns")
+        self.app.run_worker(self._execute_agent_turn, exclusive=False, group="agent_turns")
 
     async def _execute_agent_turn(self):
         """

@@ -1,60 +1,50 @@
-#!/usr/bin/env python3
-"""
-Test script for agent selection functionality.
-"""
+# tests/test_agent_selection.py
+import pytest
+from agent_registry import get_agent, list_available_agents, AGENT_REGISTRY, DEFAULT_AGENT
+from mcp_agent.core.fastagent import FastAgent
 
-import asyncio
-import sys
-import os
-
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-from agent_registry import get_agent, list_available_agents, AGENT_REGISTRY
-
-def test_agent_registry():
-    """Test the agent registry functionality."""
-    print("Testing Agent Registry...")
-    
-    # Test listing available agents
+def test_list_available_agents():
+    """Ensures list_available_agents returns the correct names."""
     available_agents = list_available_agents()
-    print(f"Available agents: {available_agents}")
-    assert len(available_agents) >= 2, "Should have at least 2 agents"
+    assert set(available_agents) == set(AGENT_REGISTRY.keys())
+    assert len(available_agents) >= 2 # We have at least minimal and coding
+
+def test_get_specific_agent():
+    """Tests successful retrieval of a specific, configured agent."""
+    agent = get_agent("coding")
+    assert agent is not None
+    assert isinstance(agent, FastAgent)
     
-    # Test getting valid agents
+    agent_name = list(agent.agents.keys())[0]
+    assert agent_name == "coding"
+
+def test_get_default_agent():
+    """Tests retrieval of the default agent and verifies its name."""
+    agent = get_agent() # No name provided
+    assert agent is not None
+    assert isinstance(agent, FastAgent)
+    
+    agent_name = list(agent.agents.keys())[0]
+    assert agent_name == DEFAULT_AGENT
+
+def test_get_nonexistent_agent_raises_keyerror():
+    """Tests that requesting a non-existent agent raises a KeyError."""
+    with pytest.raises(KeyError) as exc_info:
+        get_agent("nonexistent_agent")
+    assert "not found" in str(exc_info.value)
+
+def test_agent_characteristics_are_distinct():
+    """Tests that different agents have distinct properties."""
     minimal_agent = get_agent("minimal")
     coding_agent = get_agent("coding")
-    print("✓ Successfully retrieved minimal and coding agents")
-    
-    # Test getting invalid agent
-    try:
-        get_agent("nonexistent")
-        assert False, "Should have raised KeyError"
-    except KeyError as e:
-        print(f"✓ Correctly raised KeyError for invalid agent: {e}")
-    
-    print("All agent registry tests passed!")
 
-def test_agent_characteristics():
-    """Test that agents have different characteristics."""
-    print("\nTesting Agent Characteristics...")
-    
-    minimal_agent = get_agent("minimal")
-    coding_agent = get_agent("coding")
-    
-    # Check that they're different instances
-    assert minimal_agent != coding_agent, "Agents should be different instances"
-    
-    # Check that they have different names
-    assert minimal_agent.name != coding_agent.name, "Agents should have different names"
-    
-    print("✓ Agents have different characteristics")
-    print(f"  Minimal agent: {minimal_agent.name}")
-    print(f"  Coding agent: {coding_agent.name}")
-    
-    print("All agent characteristics tests passed!")
+    # The .agents property holds the configuration provided to the decorator.
+    # Let's access the config dictionaries directly by their known names for clarity.
+    minimal_config = minimal_agent.agents["minimal"]
+    coding_config = coding_agent.agents["coding"]
 
-if __name__ == "__main__":
-    test_agent_registry()
-    test_agent_characteristics()
-    print("\n🎉 All tests passed! Agent selection system is working correctly.") 
+    # --- FIX: Use dictionary key access for simple values ---
+    assert minimal_config['instruction'] != coding_config['instruction']
+
+    # --- And attribute access for the RequestParams object ---
+    assert minimal_config['request_params'].maxTokens != coding_config['request_params'].maxTokens

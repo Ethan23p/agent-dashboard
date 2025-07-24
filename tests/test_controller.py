@@ -1,161 +1,90 @@
+# tests/test_controller.py
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from controller import Controller, ExitCommand
-from model import Model, AppState
-from mcp_agent.core.prompt import Prompt
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from controller import Controller, ExitCommand, SwitchAgentCommand
+from model import Model
+from primitives import Interaction
+# LINTER FIX: Added the missing import for the Prompt helper.
+from mcp_agent.core.prompt import Prompt
+from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
+
+@pytest.fixture
+def mock_model() -> AsyncMock:
+    """Fixture for a mocked Model."""
+    model = AsyncMock(spec=Model)
+    model.get_active_session.return_value = MagicMock()
+    model.user_preferences = {"auto_save_enabled": True}
+    return model
+
+@pytest.fixture
+def mock_app() -> MagicMock:
+    """Fixture for a mocked Textual App."""
+    return MagicMock()
+
+@pytest.fixture
+def controller(mock_model: AsyncMock, mock_app: MagicMock) -> Controller:
+    """Fixture for a Controller instance with mocks."""
+    return Controller(mock_model, mock_app)
 
 @pytest.mark.asyncio
-async def test_exit_command():
-    """Test that the exit command raises ExitCommand exception."""
-    mock_model = AsyncMock()
-    mock_agent_app = MagicMock()
-    controller = Controller(mock_model, mock_agent_app)
-
+async def test_handle_exit_command(controller: Controller):
+    """Test that the /exit command raises the ExitCommand exception."""
     with pytest.raises(ExitCommand):
         await controller.process_user_input("/exit")
 
-    with pytest.raises(ExitCommand):
-        await controller.process_user_input("/quit")
-
+@pytest.mark.asyncio
+async def test_handle_switch_command(controller: Controller):
+    """Test that the /switch command raises the SwitchAgentCommand exception."""
+    with patch('commands.list_available_agents', return_value=['minimal', 'coding']):
+        with pytest.raises(SwitchAgentCommand) as exc_info:
+            await controller.process_user_input("/switch coding")
+        assert exc_info.value.agent_name == "coding"
 
 @pytest.mark.asyncio
-async def test_save_command():
-    """Test the save command functionality."""
-    mock_model = AsyncMock()
-    mock_agent_app = MagicMock()
-    controller = Controller(mock_model, mock_agent_app)
-
-    # Test save with default filename
-    await controller.process_user_input("/save")
-    mock_model.save_history_to_file.assert_called_once_with(None)
-
-    # Test save with custom filename
-    await controller.process_user_input("/save test_file.json")
-    mock_model.save_history_to_file.assert_called_with("test_file.json")
-
+async def test_handle_save_command(controller: Controller):
+    """Test that the /save command calls the model's save method."""
+    with patch('commands.save_session', new_callable=AsyncMock) as mock_save:
+        await controller.process_user_input("/save")
+        mock_save.assert_called_once()
+        controller.model.add_interaction_to_active_session.assert_called_once() # type: ignore
+        interaction_arg = controller.model.add_interaction_to_active_session.call_args[0][0] # type: ignore
+        assert "Success" in str(interaction_arg.contents)
 
 @pytest.mark.asyncio
-async def test_load_command():
-    """Test the load command functionality."""
-    mock_model = AsyncMock()
-    mock_agent_app = MagicMock()
-    controller = Controller(mock_model, mock_agent_app)
-
-    # Test load with filename
-    await controller.process_user_input("/load test_file.json")
-    mock_model.load_history_from_file.assert_called_once_with("test_file.json")
-
-
-@pytest.mark.asyncio
-async def test_clear_command():
-    """Test the clear command functionality."""
-    mock_model = AsyncMock()
-    mock_agent_app = MagicMock()
-    controller = Controller(mock_model, mock_agent_app)
-
-    await controller.process_user_input("/clear")
-    mock_model.clear_history.assert_called_once()
-    mock_model.set_state.assert_called_with(AppState.IDLE, success_message="Conversation history cleared.")
-
-
-@pytest.mark.asyncio
-async def test_unknown_command():
-    """Test handling of unknown commands."""
-    mock_model = AsyncMock()
-    mock_agent_app = MagicMock()
-    controller = Controller(mock_model, mock_agent_app)
-
-    await controller.process_user_input("/unknown")
-    mock_model.set_state.assert_called_with(AppState.ERROR, error_message="Unknown command: /unknown")
-
-
-@pytest.mark.asyncio
-async def test_empty_input():
-    """Test that empty input is handled gracefully."""
-    mock_model = AsyncMock()
-    mock_agent_app = MagicMock()
-    controller = Controller(mock_model, mock_agent_app)
-
-    await controller.process_user_input("")
-    await controller.process_user_input("   ")
+async def test_handle_prompt_initiates_agent_turn(controller: Controller, mock_app: MagicMock):
+    """Test that a user prompt correctly triggers a background worker."""
+    await controller.process_user_input("Hello agent")
     
-    # Should not call any agent methods
-    mock_agent_app.agent.generate.assert_not_called()
-
+    controller.model.add_interaction_to_active_session.assert_called_once() # type: ignore
+    interaction_arg = controller.model.add_interaction_to_active_session.call_args[0][0] # type: ignore
+    assert interaction_arg.metadata["user-facing"] is True
+    assert interaction_arg.contents[0].last_text() == "Hello agent"
+    
+    controller.model.save_active_session.assert_called_once() # type: ignore
+    mock_app.run_worker.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_successful_agent_prompt():
-    """Test successful agent prompt handling."""
-    mock_model = AsyncMock()
-    mock_model.conversation_history = []
-    mock_model.user_preferences = {"auto_save_enabled": False}
-    
+@patch('controller.get_agent')
+async def test_execute_agent_turn_success(mock_get_agent, controller: Controller):
+    """Test a successful agent turn execution."""
+    mock_agent_instance = MagicMock()
+    mock_agent_app = AsyncMock()
     mock_agent = AsyncMock()
-    mock_response = MagicMock()
-    mock_response.role = 'assistant'
-    mock_response.content = [{'type': 'text', 'text': 'Mocked response'}]
+    mock_response = Prompt.assistant("Agent response")
     mock_agent.generate.return_value = mock_response
-    
-    mock_agent_app = MagicMock()
-    mock_agent_app.agent = mock_agent
-    
-    controller = Controller(mock_model, mock_agent_app)
+    mock_agent_app.__getitem__.return_value = mock_agent
+    mock_agent_instance.run.return_value.__aenter__.return_value = mock_agent_app
+    mock_get_agent.return_value = mock_agent_instance
 
-    await controller.process_user_input("Hello, agent!")
+    await controller._execute_agent_turn()
 
-    # Verify the flow
-    mock_model.set_state.assert_called_with(AppState.AGENT_IS_THINKING)
-    mock_model.add_message.assert_called()
-    mock_agent.generate.assert_called_once()
-    mock_model.set_state.assert_called_with(AppState.IDLE)
+    controller.model.set_thinking_status.assert_any_call(True) # type: ignore
+    controller.model.set_thinking_status.assert_any_call(False) # type: ignore
 
+    assert controller.model.add_interaction_to_active_session.call_count == 1 # type: ignore
+    interaction_arg = controller.model.add_interaction_to_active_session.call_args[0][0] # type: ignore
+    assert interaction_arg.metadata["type"] == "agent_response"
+    assert interaction_arg.contents[0].last_text() == "Agent response"
 
-@pytest.mark.asyncio
-async def test_agent_prompt_with_retry():
-    """Test agent prompt handling with retry logic."""
-    mock_model = AsyncMock()
-    mock_model.conversation_history = []
-    mock_model.user_preferences = {"auto_save_enabled": False}
-    
-    mock_agent = AsyncMock()
-    # First call fails, second call succeeds
-    mock_agent.generate.side_effect = [Exception("Network error"), MagicMock(role='assistant', content=[{'type': 'text', 'text': 'Success'}])]
-    
-    mock_agent_app = MagicMock()
-    mock_agent_app.agent = mock_agent
-    
-    controller = Controller(mock_model, mock_agent_app)
-
-    await controller.process_user_input("Hello, agent!")
-
-    # Should have been called twice (retry)
-    assert mock_agent.generate.call_count == 2
-    # Should have set error state during retry
-    mock_model.set_state.assert_any_call(AppState.ERROR, error_message=pytest.approx("Agent Error (attempt 1/3): Network error. Retrying in", rel=0.1))
-
-
-@pytest.mark.asyncio
-async def test_agent_prompt_final_failure():
-    """Test agent prompt handling when all retries fail."""
-    mock_model = AsyncMock()
-    mock_model.conversation_history = []
-    mock_model.user_preferences = {"auto_save_enabled": False}
-    
-    mock_agent = AsyncMock()
-    # All calls fail
-    mock_agent.generate.side_effect = Exception("Persistent error")
-    
-    mock_agent_app = MagicMock()
-    mock_agent_app.agent = mock_agent
-    
-    controller = Controller(mock_model, mock_agent_app)
-
-    await controller.process_user_input("Hello, agent!")
-
-    # Should have been called 3 times (max retries)
-    assert mock_agent.generate.call_count == 3
-    # Should have rolled back the user message
-    mock_model.pop_last_message.assert_called_once()
-    # Should have set final error state
-    mock_model.set_state.assert_any_call(AppState.ERROR, error_message="Agent Error after 3 attempts: Persistent error") 
+    controller.model.save_active_session.assert_called_once() # type: ignore

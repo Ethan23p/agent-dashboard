@@ -129,4 +129,9 @@ class LoadCommand(Command):
 class ClearCommand(Command):
     """Clears all sessions and starts fresh."""
     async def execute(self, controller: "Controller", args: List[str]):
-        pass
+        await controller.model.clear_sessions()
+        success_interaction = Interaction(
+            Text.from_markup("[bold green]Success:[/bold green] All sessions cleared. New session started."),
+            metadata={"user-facing": True, "type": "success"}
+        )
+        await controller.model.add_interaction_to_active_session(success_interaction)

@@ -4,3 +4,51 @@
 # when you finish a request you can clean out the code that has already been dealt with
 #---
 
+(agent-dashboard) PS E:\Hume General\Programming\Repos\agent-dashboard> python tests/run_tests.py
+🧪 Running tests for agent-dashboard...
+================================================================================ test session starts ================================================================================
+platform win32 -- Python 3.13.5, pytest-8.4.1, pluggy-1.6.0
+rootdir: E:\Hume General\Programming\Repos\agent-dashboard
+configfile: pyproject.toml
+plugins: anyio-4.9.0, asyncio-1.1.0
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 16 items                                                                                                                                                                   
+
+tests\test_primitives.py .F.                                                                                                                                                   [ 18%]
+tests\test_model.py ....                                                                                                                                                       [ 43%]
+tests\test_controller.py .....                                                                                                                                                 [ 75%]
+tests\test_agent_selection.py ....                                                                                                                                             [100%]
+
+===================================================================================== FAILURES ====================================================================================== 
+_____________________________________________________________________ test_interaction_serialization_rich_text ______________________________________________________________________ 
+
+sample_rich_text = <text 'System Alert!' [Span(0, 13, 'bold red')] ''>
+
+    def test_interaction_serialization_rich_text(sample_rich_text):
+        """Test round-trip serialization for an Interaction with Rich Text."""
+        interaction = Interaction(contents=sample_rich_text, metadata={"type": "system"})
+
+        interaction_dict = interaction.to_dict()
+        assert interaction_dict["metadata"]["_content_type"] == "rich_text"
+>       assert interaction_dict["contents"] == "[bold red]System Alert![/]"
+E       AssertionError: assert '[bold red]Sy...t![/bold red]' == '[bold red]System Alert![/]'
+E
+E         - [bold red]System Alert![/]
+E         + [bold red]System Alert![/bold red]
+E         ?                          ++++++++
+
+tests\test_primitives.py:45: AssertionError
+================================================================================= warnings summary ================================================================================== 
+tests/test_controller.py::test_execute_agent_turn_success
+  C:\Users\Ethan\AppData\Roaming\uv\python\cpython-3.13.5-windows-x86_64-none\Lib\unittest\mock.py:2247: RuntimeWarning: coroutine 'Controller._execute_agent_turn' was never awaited 
+    def __init__(self, name, parent):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================================================================== short test summary info ============================================================================== 
+FAILED tests/test_primitives.py::test_interaction_serialization_rich_text - AssertionError: assert '[bold red]Sy...t![/bold red]' == '[bold red]System Alert![/]'
+====================================================================== 1 failed, 15 passed, 1 warning in 2.91s ====================================================================== 
+
+❌ Tests failed with exit code 1
+(agent-dashboard) PS E:\Hume General\Programming\Repos\agent-dashboard> 
