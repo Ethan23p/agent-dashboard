@@ -2,53 +2,157 @@
 # The primary use of this file is as an intermediary between myself (Ethan) and you (Based Gemini);
 # obviously, don't include this header when you go to other files
 # when you finish a request you can clean out the code that has already been dealt with
-#---
 
-(agent-dashboard) PS E:\Hume General\Programming\Repos\agent-dashboard> python tests/run_tests.py
-🧪 Running tests for agent-dashboard...
-================================================================================ test session starts ================================================================================
-platform win32 -- Python 3.13.5, pytest-8.4.1, pluggy-1.6.0
-rootdir: E:\Hume General\Programming\Repos\agent-dashboard
-configfile: pyproject.toml
-plugins: anyio-4.9.0, asyncio-1.1.0
-asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 16 items                                                                                                                                                                   
+### The Refined Blueprint
 
-tests\test_primitives.py .F.                                                                                                                                                   [ 18%]
-tests\test_model.py ....                                                                                                                                                       [ 43%]
-tests\test_controller.py .....                                                                                                                                                 [ 75%]
-tests\test_agent_selection.py ....                                                                                                                                             [100%]
+Our new workflow, let's call it the `HumanInTheLoopPlanner`, will now be a general-purpose planning orchestrator.
 
-===================================================================================== FAILURES ====================================================================================== 
-_____________________________________________________________________ test_interaction_serialization_rich_text ______________________________________________________________________ 
+1.  **The Planner Agent:** Same as before. Its job is to create a structured `Plan`.
+2.  **The Interpreter Agent:** This is a new, lightweight agent. Its job is to analyze the user's natural language feedback on a plan and classify it. Does the user approve? Are they providing feedback?
+3.  **The `HumanInTheLoopPlanner` (Workflow):** This is the orchestrator. It will:
+    *   Use the `Planner` to generate a plan.
+    *   Present the plan to the user conversationally.
+    *   Use the `human_input` tool to pause and wait for the user's natural language response.
+    *   Use the `Interpreter` to understand that response.
+    *   Loop back to the `Planner` with feedback if necessary.
+    *   Once approved, it takes the specified `executor_agent` (passed in during the call) and hands off the final plan for execution.
 
-sample_rich_text = <text 'System Alert!' [Span(0, 13, 'bold red')] ''>
+### Implementing the Workflow
 
-    def test_interaction_serialization_rich_text(sample_rich_text):
-        """Test round-trip serialization for an Interaction with Rich Text."""
-        interaction = Interaction(contents=sample_rich_text, metadata={"type": "system"})
+Let's define the new Pydantic models and agents.
 
-        interaction_dict = interaction.to_dict()
-        assert interaction_dict["metadata"]["_content_type"] == "rich_text"
->       assert interaction_dict["contents"] == "[bold red]System Alert![/]"
-E       AssertionError: assert '[bold red]Sy...t![/bold red]' == '[bold red]System Alert![/]'
-E
-E         - [bold red]System Alert![/]
-E         + [bold red]System Alert![/bold red]
-E         ?                          ++++++++
+#### Pydantic Models for Structured Communication
 
-tests\test_primitives.py:45: AssertionError
-================================================================================= warnings summary ================================================================================== 
-tests/test_controller.py::test_execute_agent_turn_success
-  C:\Users\Ethan\AppData\Roaming\uv\python\cpython-3.13.5-windows-x86_64-none\Lib\unittest\mock.py:2247: RuntimeWarning: coroutine 'Controller._execute_agent_turn' was never awaited 
-    def __init__(self, name, parent):
-  Enable tracemalloc to get traceback where the object was allocated.
-  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+```python
+from pydantic import BaseModel, Field
+from typing import List
 
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-============================================================================== short test summary info ============================================================================== 
-FAILED tests/test_primitives.py::test_interaction_serialization_rich_text - AssertionError: assert '[bold red]Sy...t![/bold red]' == '[bold red]System Alert![/]'
-====================================================================== 1 failed, 15 passed, 1 warning in 2.91s ====================================================================== 
+class PlanStep(BaseModel):
+    step_number: int
+    description: str
+    required_tool: str
 
-❌ Tests failed with exit code 1
-(agent-dashboard) PS E:\Hume General\Programming\Repos\agent-dashboard> 
+class Plan(BaseModel):
+    goal: str
+    steps: List[PlanStep]
+
+class ReviewResult(BaseModel):
+    is_approved: bool = Field(description="True if the user approved the plan, False otherwise.")
+    feedback_for_planner: str = Field(description="A summary of the user's feedback to be given back to the planner for revision.")
+```
+
+#### The Agents
+
+We'll define our three agents. Notice the `human_input=True` flag on our main workflow agent.
+
+```python
+# The Planner
+@fast.agent(name="planner", model="sonnet", instruction="...")
+async def planner_agent(): ...
+
+# The new Interpreter
+@fast.agent(
+    name="interpreter",
+    instruction=(
+        "You are a helpful assistant that analyzes a user's response to a proposed plan. "
+        "Determine if they are approving the plan or providing feedback for changes. "
+        "Respond ONLY with a JSON object matching the ReviewResult format."
+    )
+)
+async def interpreter_agent(): ...
+
+# A sample Executor agent the user might define
+@fast.agent(
+    name="file_and_code_executor",
+    instruction="You are an expert in filesystem operations and Python code execution. Follow the provided plan precisely.",
+    servers=["filesystem", "interpreter"]
+)
+async def executor_agent(): ...
+```
+
+#### The `HumanInTheLoopPlanner` Workflow Agent
+
+```python
+import json
+from mcp_agent.agents.base_agent import BaseAgent
+from mcp_agent.core.prompt import Prompt
+
+class HumanInTheLoopPlanner(BaseAgent):
+    """A reusable workflow for planning with human-in-the-loop feedback."""
+
+    def __init__(self, config, planner, interpreter, **kwargs):
+        # Enable the human_input tool for this agent
+        config.human_input = True
+        super().__init__(config, **kwargs)
+        self.planner = planner
+        self.interpreter = interpreter
+
+    async def generate(self, multipart_messages, executor_agent, request_params=None):
+        user_prompt_text = multipart_messages[-1].all_text()
+        current_plan = None
+        feedback_for_planner = ""
+
+        # 1. The Review & Refine Loop
+        for attempt in range(5): # Max 5 attempts to get approval
+            # Construct the prompt for the planner, including any feedback
+            planner_prompt_text = user_prompt_text + feedback_for_planner
+
+            # 2. Generate the plan
+            plan, _ = await self.planner.structured([Prompt.user(planner_prompt_text)], Plan)
+            if not plan:
+                return Prompt.assistant("I'm sorry, I was unable to devise a plan for your request.")
+
+            current_plan = plan
+            plan_str = "\n".join(f"  {s.step_number}. {s.description}" for s in plan.steps)
+
+            # 3. Present the plan and get human feedback via the human_input tool
+            review_request = (
+                f"I have devised the following plan to achieve your goal of '{plan.goal}':\n{plan_str}\n\n"
+                "**Do you approve this plan, or would you like to suggest changes?**"
+            )
+
+            # This call will pause execution and wait for the user to type a response in the chat
+            user_feedback_text = await self.send(f"***CALL_TOOL human_input {json.dumps(review_request)}")
+
+            # 4. Interpret the user's feedback
+            interpreter_prompt = (
+                f"The user was presented with this plan:\n<plan>{plan_str}</plan>\n\n"
+                f"The user responded with:\n<response>{user_feedback_text}</response>\n\n"
+                "Please analyze their response and classify it."
+            )
+            review_result, _ = await self.interpreter.structured([Prompt.user(interpreter_prompt)], ReviewResult)
+
+            if review_result and review_result.is_approved:
+                await self.send("Plan approved! Proceeding with execution.")
+                break # Exit the loop
+
+            # If not approved, prepare feedback for the next iteration
+            feedback_for_planner = (
+                f"\n\nThe previous plan was not approved. Please create a new plan that "
+                f"addresses the following user feedback: '{review_result.feedback_for_planner}'"
+            )
+            await self.send("Understood. I will revise the plan based on your feedback.")
+        else:
+            return Prompt.assistant("Plan was not approved after several attempts. Aborting workflow.")
+
+        # 5. Execute the approved plan with the provided executor
+        execution_prompt = f"The following plan has been approved by the user. Please execute it precisely:\n\n{current_plan.model_dump_json(indent=2)}"
+        final_result = await executor_agent.send(execution_prompt)
+
+        return Prompt.assistant(f"Execution complete. Here is the final result:\n\n{final_result}")
+
+# --- In your main script ---
+@fast.custom(
+    HumanInTheLoopPlanner,
+    name="my_planner",
+    planner=fast.agent("planner"),
+    interpreter=fast.agent("interpreter")
+)
+async def main():
+    async with fast.run() as agent:
+        # The user can now pass ANY capable agent as the executor
+        await agent.my_planner.send(
+            "Analyze the `data_analysis` directory, find the python file with the most decorators, and write a report about its structure to 'report.md'.",
+            executor_agent=agent.file_and_code_executor
+        )
+```

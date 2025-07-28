@@ -20,7 +20,7 @@ This project started as a way to have a more stable and transparent interface fo
 
 ## Project Structure
 
-```
+```md
 agent-dashboard/
 ├── src/                           # Main application code
 │   ├── main.py                   # Application entry point
@@ -42,15 +42,15 @@ agent-dashboard/
 
 The client is built with a few key ideas in mind:
 
-*   **Context Management.** Following the philosophy of the Model Context Protocol, the controller assembles the conversational history and other data to form the precise context sent to the agent on each turn. This allows for more deliberate, developer-driven context strategies.
+- **Context Management.** Following the philosophy of the Model Context Protocol, the controller assembles the conversational history and other data to form the precise context sent to the agent on each turn. This allows for more deliberate, developer-driven context strategies.
 
-*   **Asynchronous Core.** The application uses `asyncio` and a non-blocking prompt, which keeps the UI responsive. It's designed to support more complex operations, like parallel agent interactions, and could be adapted for a GUI dashboard later.
+- **Asynchronous Core.** The application uses `asyncio` and a non-blocking prompt, which keeps the UI responsive. It's designed to support more complex operations, like parallel agent interactions, and could be adapted for a GUI dashboard later.
 
-*   **Stateful History.** While the terminal shows a clean chat log, a comprehensive history is maintained in the background. This history can be saved automatically or manually, providing a useful artifact for debugging or resuming sessions.
+- **Stateful History.** While the terminal shows a clean chat log, a comprehensive history is maintained in the background. This history can be saved automatically or manually, providing a useful artifact for debugging or resuming sessions.
 
-*   **Resilient Operation.** LLM or MCP server errors are handled by the controller, which rolls back the conversational state to its last valid point. The application also shuts down cleanly to avoid resource errors.
+- **Resilient Operation.** LLM or MCP server errors are handled by the controller, which rolls back the conversational state to its last valid point. The application also shuts down cleanly to avoid resource errors.
 
-*   **Comprehensive Testing.** The application includes a complete testing suite with unit tests, integration tests, and retry mechanisms to ensure reliability and maintainability.
+- **Comprehensive Testing.** The application includes a complete testing suite with unit tests, integration tests, and retry mechanisms to ensure reliability and maintainability.
 
 ## Running the Application
 
@@ -77,41 +77,3 @@ Once the application starts, you'll see a clean terminal UI with:
   - `/load <filename>` - Load conversation history
   - `/clear` - Clear current conversation
   - `/exit` or `/quit` - Exit the application
-
-## Testing
-
-The project includes a comprehensive testing suite to ensure reliability and maintainability:
-
-### Running Tests
-
-```bash
-# Run all tests
-uv run python tests/run_tests.py
-
-# Run specific test file
-uv run python -m pytest tests/test_model.py
-
-# Run with verbose output
-uv run python -m pytest tests/ -v
-```
-
-### Test Structure
-
-- **`tests/test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
-- **`tests/test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
-- **`tests/test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
-- **`tests/test_agent_selection.py`**: Tests for agent switching functionality
-
-### Test Features
-
-- **Retry Logic**: The controller includes exponential backoff retry logic for agent calls, making the application more resilient to temporary network or API issues
-- **Mock Testing**: All tests use mocks to avoid external dependencies while thoroughly testing the application logic
-- **Async Support**: Full async/await support for testing the asynchronous nature of the application
-
-## Configuration
-
-The application uses `src/fastagent.config.yaml` for configuration, including:
-
-- **Model Settings**: Default model and token limits
-- **MCP Servers**: Filesystem, fetch, memory, and other server configurations
-- **Logging**: Customizable logging and display options

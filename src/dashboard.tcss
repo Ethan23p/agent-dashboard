@@ -1,0 +1,118 @@
+/* Configurable 5-color scheme using Textual theme variables */
+/* Colors are defined in the Python code and applied via the theme system */
+/* Primary: Main background color ($primary, $surface, $background) */
+/* Secondary: Accent color for headers, buttons, etc. ($secondary, $panel) */
+/* Text: Text color ($text) */
+/* Highlight: Selection and highlight color ($accent, $success, 'warning') */
+/* Border: Border and divider color ($error) */
+
+/* General screen and layout styling */
+Screen {
+    background: $surface;
+    color: $text;
+    layout: vertical;
+}
+
+#app-grid {
+    layout: horizontal;
+    height: 100%;
+}
+
+/* Sidebar styling for the session list */
+#session-list {
+    width: 30;
+    border-right: solid $border;
+    overflow-y: auto;
+    background: $surface;
+}
+
+#session-list ListItem {
+    padding: 1;
+    color: $text;
+}
+
+#session-list ListItem Label {
+    color: $text;
+    background: transparent;
+}
+
+#session-list ListItem:hover {
+    background: $secondary;
+}
+
+#session-list ListItem:hover Label {
+    color: $text;
+    background: transparent;
+}
+
+#session-list ListItem.--highlight {
+    background: $accent;
+    color: $surface;
+}
+
+#session-list ListItem.--highlight Label {
+    color: $surface;
+    background: transparent;
+}
+
+/* Header and Footer styling */
+Header {
+    dock: top;
+    background: $secondary;
+    color: $text;
+}
+
+Footer {
+    dock: bottom;
+    background: $surface;
+    color: $text;
+}
+
+/* Main content area container */
+#main-content {
+    width: 1fr;
+    height: 100%;
+    layout: vertical;
+}
+
+#chat-history {
+    height: 1fr;
+    padding: 0 1;
+    background: $background;
+    color: $text;
+    border: round $border;
+    margin: 1 2;
+}
+
+/* The composite input bar styling */
+#input-bar {
+    height: 3;
+    padding: 0 1;
+    background: $panel;
+    border: round $border;
+    margin: 0 1 1 1;
+    dock: bottom;
+}
+
+#message-input {
+    width: 1fr; /* The input field takes up all available flexible space */
+    height: 100%;
+    border: none; /* Remove the default border from the input */
+    background: $panel;
+    color: $text;
+    padding: 0 1;
+}
+
+#send-button {
+    width: 8;
+    height: 100%;
+    border: none; /* Remove the default border from the button */
+    background: $accent;
+    color: $surface;
+    content-align: center middle;
+}
+
+#send-button:hover {
+    background: $secondary;
+    color: $text;
+}

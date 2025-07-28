@@ -8,7 +8,7 @@ from commands import (ClearCommand, ExitCommand, ExitCommandImpl,
                         ListAgentsCommand, LoadCommand, SaveCommand,
                         SwitchAgentCommand, SwitchCommand)
 from mcp_agent.core.prompt import Prompt
-from primitives import Interaction, Session
+from model import Interaction, Session
 from rich.text import Text
 
 if TYPE_CHECKING:

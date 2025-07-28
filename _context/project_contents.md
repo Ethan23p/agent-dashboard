@@ -82,6 +82,29 @@ dmypy.json
 2025-07-23 18:00:16,149 - root - INFO - --- Application session started ---
 2025-07-23 18:00:16,178 - model - INFO - Created and activated new session session_20250723_180016 for agent 'minimal'.
 2025-07-23 18:00:23,737 - root - INFO - --- Application session ended ---
+2025-07-23 20:42:15,220 - root - INFO - --- Application session started ---
+2025-07-23 20:42:15,255 - model - INFO - Created and activated new session session_20250723_204215 for agent 'minimal'.
+2025-07-23 20:42:18,814 - root - INFO - --- Application session ended ---
+2025-07-23 20:52:52,955 - root - INFO - --- Application session started ---
+2025-07-23 20:52:52,992 - model - INFO - Created and activated new session session_20250723_205252 for agent 'minimal'.
+2025-07-23 20:53:10,704 - root - INFO - --- Application session ended ---
+2025-07-23 20:58:18,141 - root - INFO - --- Application session started ---
+2025-07-23 20:58:18,185 - model - INFO - Created and activated new session session_20250723_205818 for agent 'minimal'.
+2025-07-23 20:58:18,877 - root - INFO - --- Application session ended ---
+2025-07-23 21:00:39,194 - root - INFO - --- Application session started ---
+2025-07-23 21:00:39,231 - model - INFO - Created and activated new session session_20250723_210039 for agent 'minimal'.
+2025-07-23 21:00:43,452 - model - INFO - Switched active session to session_20250723_210039.
+2025-07-26 11:39:11,482 - root - INFO - --- Application session started ---
+2025-07-26 11:39:12,414 - model - INFO - Created and activated new session session_20250726_113912 for agent 'minimal'.
+2025-07-26 11:40:55,891 - model - INFO - Session record saved successfully to _context/session_20250726_113912.json
+2025-07-26 11:41:06,310 - google_genai._api_client - WARNING - Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+2025-07-26 11:41:10,069 - google_genai.models - INFO - AFC is enabled with max remote calls: 10.
+2025-07-26 11:41:11,293 - google_genai.models - INFO - AFC is enabled with max remote calls: 10.
+2025-07-26 11:41:12,359 - model - INFO - Session record saved successfully to _context/session_20250726_113912.json
+2025-07-26 11:41:24,529 - commands - INFO - Exit command received.
+2025-07-26 11:41:24,643 - root - INFO - --- Application session ended ---
+2025-07-26 11:41:43,636 - root - INFO - --- Application session started ---
+2025-07-26 11:41:43,675 - model - INFO - Created and activated new session session_20250726_114143 for agent 'minimal'.
 
 ```
 
@@ -186,7 +209,11 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.12.0",
 ]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -194,7 +221,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-
+pythonpath = ["src"]
 ```
 
 --- END OF FILE pyproject.toml ---
@@ -224,7 +251,7 @@ This project started as a way to have a more stable and transparent interface fo
 
 ## Project Structure
 
-```
+```md
 agent-dashboard/
 ├── src/                           # Main application code
 │   ├── main.py                   # Application entry point
@@ -246,15 +273,15 @@ agent-dashboard/
 
 The client is built with a few key ideas in mind:
 
-*   **Context Management.** Following the philosophy of the Model Context Protocol, the controller assembles the conversational history and other data to form the precise context sent to the agent on each turn. This allows for more deliberate, developer-driven context strategies.
+- **Context Management.** Following the philosophy of the Model Context Protocol, the controller assembles the conversational history and other data to form the precise context sent to the agent on each turn. This allows for more deliberate, developer-driven context strategies.
 
-*   **Asynchronous Core.** The application uses `asyncio` and a non-blocking prompt, which keeps the UI responsive. It's designed to support more complex operations, like parallel agent interactions, and could be adapted for a GUI dashboard later.
+- **Asynchronous Core.** The application uses `asyncio` and a non-blocking prompt, which keeps the UI responsive. It's designed to support more complex operations, like parallel agent interactions, and could be adapted for a GUI dashboard later.
 
-*   **Stateful History.** While the terminal shows a clean chat log, a comprehensive history is maintained in the background. This history can be saved automatically or manually, providing a useful artifact for debugging or resuming sessions.
+- **Stateful History.** While the terminal shows a clean chat log, a comprehensive history is maintained in the background. This history can be saved automatically or manually, providing a useful artifact for debugging or resuming sessions.
 
-*   **Resilient Operation.** LLM or MCP server errors are handled by the controller, which rolls back the conversational state to its last valid point. The application also shuts down cleanly to avoid resource errors.
+- **Resilient Operation.** LLM or MCP server errors are handled by the controller, which rolls back the conversational state to its last valid point. The application also shuts down cleanly to avoid resource errors.
 
-*   **Comprehensive Testing.** The application includes a complete testing suite with unit tests, integration tests, and retry mechanisms to ensure reliability and maintainability.
+- **Comprehensive Testing.** The application includes a complete testing suite with unit tests, integration tests, and retry mechanisms to ensure reliability and maintainability.
 
 ## Running the Application
 
@@ -282,47 +309,17 @@ Once the application starts, you'll see a clean terminal UI with:
   - `/clear` - Clear current conversation
   - `/exit` or `/quit` - Exit the application
 
-## Testing
-
-The project includes a comprehensive testing suite to ensure reliability and maintainability:
-
-### Running Tests
-
-```bash
-# Run all tests
-uv run python tests/run_tests.py
-
-# Run specific test file
-uv run python -m pytest tests/test_model.py
-
-# Run with verbose output
-uv run python -m pytest tests/ -v
-```
-
-### Test Structure
-
-- **`tests/test_model.py`**: Unit tests for the Model class, covering state management, conversation history, and file operations
-- **`tests/test_controller.py`**: Unit tests for the Controller class, including command parsing and agent interaction with retry logic
-- **`tests/test_integration.py`**: Integration tests that verify the interaction between Model and Controller components
-- **`tests/test_agent_selection.py`**: Tests for agent switching functionality
-
-### Test Features
-
-- **Retry Logic**: The controller includes exponential backoff retry logic for agent calls, making the application more resilient to temporary network or API issues
-- **Mock Testing**: All tests use mocks to avoid external dependencies while thoroughly testing the application logic
-- **Async Support**: Full async/await support for testing the asynchronous nature of the application
-
-## Configuration
-
-The application uses `src/fastagent.config.yaml` for configuration, including:
-
-- **Model Settings**: Default model and token limits
-- **MCP Servers**: Filesystem, fetch, memory, and other server configurations
-- **Logging**: Customizable logging and display options
-
 ```
 
 --- END OF FILE README.md ---
+
+--- START OF FILE src/__init__.py ---
+
+```py
+
+```
+
+--- END OF FILE src/__init__.py ---
 
 --- START OF FILE src/agent_registry.py ---
 
@@ -339,41 +336,32 @@ from typing import Optional
 
 AGENT_DEFINITIONS = [
     {
-        "name": "minimal",
-        "description": "A helpful assistant for general operations.",
-        "instruction": """
-        You are a helpful assistant that can perform various operations.
-        You can read files, write files, and list directory contents.
-        Always be helpful and provide clear responses to user requests.
-        """,
-        "servers": ["filesystem", "fetch", "sequential-thinking"],
-        "max_tokens": 2048,
-    },
-    {
-        "name": "coding",
-        "description": "A specialized coding assistant.",
-        "instruction": """
-        You are a specialized coding assistant. You excel at:
-        - Code review and suggestions
-        - Debugging and problem-solving
-        - Explaining complex technical concepts
-        - Providing code examples and best practices
-        
-        Always provide clear, well-documented code examples when relevant.
-        """,
-        "servers": ["filesystem"],
+        "name": "minimal-agent",
+        "description": "A minimal *effective* agent with full capabilities.",
+        "instruction": "You are a sophisticated assistant AI with many capabilities.",
+        "servers": ["filesystem", "fetch", "sequential-thinking", "playwright", "desktop-commander", "gitmcp", "github"],
         "max_tokens": 4096,
     },
     {
-        "name": "interpreter",
-        "description": "A structured data interpreter.",
-        "instruction": """
-        You are a highly efficient data parsing engine.
-        Given a user's natural language text and a target JSON schema,
-        your sole purpose is to extract the relevant information and respond
-        ONLY with the JSON object that conforms to the schema.
-        """,
-        "use_history": False,
+        "name": "filesystem-agent",
+        "description": "A simple agent with filesystem access.",
+        "instruction": "You are a utility. You should straightforwardly do as the prompt instructs with absolutely no commentary or fluff.",
+        "servers": ["filesystem"],
+        "max_tokens": 2048,
+    },
+    {
+        "name": "Spongebob-agent",
+        "description": "A plain conversational agent which embodies Spongebob.",
+        "instruction": "You are Spongebob Squarepants. You are optimistic and give advice, though you are clumsy all the while.",
+        "servers": [],
+        "max_tokens": 2048,
+    },
+    {
+        "name": "AynRand-agent",
+        "description": "A plain conversational agent which embodies Ayn Rand.",
+        "instruction": "You are Ayn Rand. You are biased towards capitalism, unspoken patriarchy, and against communism.",
+        "servers": [],
+        "max_tokens": 2048,
     },
 ]
 
@@ -586,7 +574,7 @@ from commands import (ClearCommand, ExitCommand, ExitCommandImpl,
                         ListAgentsCommand, LoadCommand, SaveCommand,
                         SwitchAgentCommand, SwitchCommand)
 from mcp_agent.core.prompt import Prompt
-from primitives import Interaction, Session
+from model import Interaction, Session
 from rich.text import Text
 
 if TYPE_CHECKING:
@@ -724,6 +712,131 @@ class Controller:
 
 --- END OF FILE src/controller.py ---
 
+--- START OF FILE src/dashboard.tcss ---
+
+```tcss
+/* Configurable 5-color scheme using Textual theme variables */
+/* Colors are defined in the Python code and applied via the theme system */
+/* Primary: Main background color ($primary, $surface, $background) */
+/* Secondary: Accent color for headers, buttons, etc. ($secondary, $panel) */
+/* Text: Text color ($text) */
+/* Highlight: Selection and highlight color ($accent, $success, 'warning') */
+/* Border: Border and divider color ($error) */
+
+/* General screen and layout styling */
+Screen {
+    background: $surface;
+    color: $text;
+    layout: vertical;
+}
+
+#app-grid {
+    layout: horizontal;
+    height: 100%;
+}
+
+/* Sidebar styling for the session list */
+#session-list {
+    width: 30;
+    border-right: solid $border;
+    overflow-y: auto;
+    background: $surface;
+}
+
+#session-list ListItem {
+    padding: 1;
+    color: $text;
+}
+
+#session-list ListItem Label {
+    color: $text;
+    background: transparent;
+}
+
+#session-list ListItem:hover {
+    background: $secondary;
+}
+
+#session-list ListItem:hover Label {
+    color: $text;
+    background: transparent;
+}
+
+#session-list ListItem.--highlight {
+    background: $accent;
+    color: $surface;
+}
+
+#session-list ListItem.--highlight Label {
+    color: $surface;
+    background: transparent;
+}
+
+/* Header and Footer styling */
+Header {
+    dock: top;
+    background: $secondary;
+    color: $text;
+}
+
+Footer {
+    dock: bottom;
+    background: $surface;
+    color: $text;
+}
+
+/* Main content area container */
+#main-content {
+    width: 1fr;
+    height: 100%;
+    layout: vertical;
+}
+
+#chat-history {
+    height: 1fr;
+    padding: 0 1;
+    background: $background;
+    color: $text;
+    border: round $border;
+    margin: 1 2;
+}
+
+/* The composite input bar styling */
+#input-bar {
+    height: 3;
+    padding: 0 1;
+    background: $panel;
+    border: round $border;
+    margin: 0 1 1 1;
+    dock: bottom;
+}
+
+#message-input {
+    width: 1fr; /* The input field takes up all available flexible space */
+    height: 100%;
+    border: none; /* Remove the default border from the input */
+    background: $panel;
+    color: $text;
+    padding: 0 1;
+}
+
+#send-button {
+    width: 8;
+    height: 100%;
+    border: none; /* Remove the default border from the button */
+    background: $accent;
+    color: $surface;
+    content-align: center middle;
+}
+
+#send-button:hover {
+    background: $secondary;
+    color: $text;
+}
+```
+
+--- END OF FILE src/dashboard.tcss ---
+
 --- START OF FILE src/fastagent.config.yaml ---
 
 ```yaml
@@ -763,11 +876,6 @@ mcp:
         - "@modelcontextprotocol/server-filesystem"
         - "G:/My Drive/AI Resources/Open collection"
 
-    # Secure filesystem server for read-only access to specific directories
-    secure-filesystem:
-      command: "uv"
-      args: ["run", "secure_filesystem_server.py", "G:/My Drive/AI Resources/Open collection"]
-
     # Memory server for persistent knowledge graph memory
     memory:
       command: "npx"
@@ -781,6 +889,32 @@ mcp:
       args:
         - "-y"
         - "@modelcontextprotocol/server-sequential-thinking"
+    
+    # Playwright server for browser automation
+    playwright:
+      command: "npx"
+      args:
+        - "@playwright/mcp@latest"
+
+    # Desktop Commander for local system control
+    desktop-commander:
+      command: "npx"
+      args:
+        - "-y"
+        - "@wonderwhy-er/desktop-commander"
+
+    # GitMcp for git operations
+    gitmcp:
+      command: "npx"
+      args:
+        - "mcp-remote"
+        - "https://gitmcp.io/{owner}/{repo}"
+
+    # GitHub Copilot
+    github:
+      transport: "http"
+      url: "https://api.githubcopilot.com/mcp/"
+
 ```
 
 --- END OF FILE src/fastagent.config.yaml ---
@@ -862,12 +996,103 @@ import asyncio
 import json
 import logging
 import os
-from typing import Callable, List, Optional
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
-from primitives import Interaction, Session
+from rich.text import Text
 
 logger = logging.getLogger(__name__)
+
+# Defines the flexible content for an Interaction, allowing it to hold agent
+# messages, system notifications, or other data structures.
+ContentsType = Union[List[PromptMessageMultipart], Text, str, Dict[str, Any]]
+
+@dataclass
+class Interaction:
+    """Represents a single event or exchange, the atomic unit of a session."""
+    contents: ContentsType
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=datetime.now)
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serializes the Interaction to a dictionary."""
+        serialized_contents: Any
+        if isinstance(self.contents, list) and all(isinstance(item, PromptMessageMultipart) for item in self.contents):
+            serialized_contents = [msg.model_dump(mode='json') for msg in self.contents]
+            # Add a type hint to the metadata for robust deserialization.
+            self.metadata['_content_type'] = 'prompt_message_multipart_list'
+        elif isinstance(self.contents, Text):
+            serialized_contents = self.contents.markup
+            self.metadata['_content_type'] = 'rich_text'
+        else:
+            serialized_contents = self.contents
+            self.metadata['_content_type'] = 'primitive'
+
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp.isoformat(),
+            "contents": serialized_contents,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Interaction":
+        """Deserializes a dictionary back into an Interaction."""
+        metadata = data.get("metadata", {})
+        content_type = metadata.get('_content_type')
+        
+        deserialized_contents: ContentsType
+        if content_type == 'prompt_message_multipart_list':
+            deserialized_contents = [PromptMessageMultipart(**msg_data) for msg_data in data["contents"]]
+        elif content_type == 'rich_text':
+            deserialized_contents = Text.from_markup(data["contents"])
+        else: # 'primitive' or fallback
+            deserialized_contents = data["contents"]
+
+        return cls(
+            id=data.get("id", str(uuid.uuid4())),
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            contents=deserialized_contents,
+            metadata=metadata,
+        )
+
+@dataclass
+class Session:
+    """
+    Represents a complete, continuous context of interactions, replacing the
+    previous concepts of 'Task' and 'Conversation'.
+    """
+    id: str = field(default_factory=lambda: f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+    created_at: datetime = field(default_factory=datetime.now)
+    agent_name: str = "minimal"
+    status: str = "active"
+    interactions: List[Interaction] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serializes the Session to a dictionary."""
+        return {
+            "id": self.id,
+            "created_at": self.created_at.isoformat(),
+            "agent_name": self.agent_name,
+            "status": self.status,
+            "interactions": [interaction.to_dict() for interaction in self.interactions],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Session":
+        """Deserializes a dictionary back into a Session."""
+        return cls(
+            id=data.get("id"),
+            created_at=datetime.fromisoformat(data["created_at"]),
+            agent_name=data.get("agent_name", "minimal"),
+            status=data.get("status", "completed"),
+            interactions=[Interaction.from_dict(interaction_data) for interaction_data in data["interactions"]],
+        )
+
 
 async def save_session(session: Session, filepath: str) -> bool:
     """Saves a session to a JSON file."""
@@ -1007,111 +1232,10 @@ class Model:
         context_dir = self.user_preferences.get("context_dir", "_context")
         filename = f"{context_dir}/{active_session.id}.json"
         await save_session(active_session, filename)
+
 ```
 
 --- END OF FILE src/model.py ---
-
---- START OF FILE src/primitives.py ---
-
-```py
-import uuid
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Dict, List, Union
-
-from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
-from rich.text import Text
-
-# Defines the flexible content for an Interaction, allowing it to hold agent
-# messages, system notifications, or other data structures.
-ContentsType = Union[List[PromptMessageMultipart], Text, str, Dict[str, Any]]
-
-@dataclass
-class Interaction:
-    """Represents a single event or exchange, the atomic unit of a session."""
-    contents: ContentsType
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.now)
-    id: str = field(default_factory=lambda: str(uuid.uuid4()))
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Serializes the Interaction to a dictionary."""
-        serialized_contents: Any
-        if isinstance(self.contents, list) and all(isinstance(item, PromptMessageMultipart) for item in self.contents):
-            serialized_contents = [msg.model_dump(mode='json') for msg in self.contents]
-            # Add a type hint to the metadata for robust deserialization.
-            self.metadata['_content_type'] = 'prompt_message_multipart_list'
-        elif isinstance(self.contents, Text):
-            serialized_contents = self.contents.markup
-            self.metadata['_content_type'] = 'rich_text'
-        else:
-            serialized_contents = self.contents
-            self.metadata['_content_type'] = 'primitive'
-
-        return {
-            "id": self.id,
-            "timestamp": self.timestamp.isoformat(),
-            "contents": serialized_contents,
-            "metadata": self.metadata,
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Interaction":
-        """Deserializes a dictionary back into an Interaction."""
-        metadata = data.get("metadata", {})
-        content_type = metadata.get('_content_type')
-        
-        deserialized_contents: ContentsType
-        if content_type == 'prompt_message_multipart_list':
-            deserialized_contents = [PromptMessageMultipart(**msg_data) for msg_data in data["contents"]]
-        elif content_type == 'rich_text':
-            deserialized_contents = Text.from_markup(data["contents"])
-        else: # 'primitive' or fallback
-            deserialized_contents = data["contents"]
-
-        return cls(
-            id=data.get("id", str(uuid.uuid4())),
-            timestamp=datetime.fromisoformat(data["timestamp"]),
-            contents=deserialized_contents,
-            metadata=metadata,
-        )
-
-@dataclass
-class Session:
-    """
-    Represents a complete, continuous context of interactions, replacing the
-    previous concepts of 'Task' and 'Conversation'.
-    """
-    id: str = field(default_factory=lambda: f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-    created_at: datetime = field(default_factory=datetime.now)
-    agent_name: str = "minimal"
-    status: str = "active"
-    interactions: List[Interaction] = field(default_factory=list)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Serializes the Session to a dictionary."""
-        return {
-            "id": self.id,
-            "created_at": self.created_at.isoformat(),
-            "agent_name": self.agent_name,
-            "status": self.status,
-            "interactions": [interaction.to_dict() for interaction in self.interactions],
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Session":
-        """Deserializes a dictionary back into a Session."""
-        return cls(
-            id=data.get("id"),
-            created_at=datetime.fromisoformat(data["created_at"]),
-            agent_name=data.get("agent_name", "minimal"),
-            status=data.get("status", "completed"),
-            interactions=[Interaction.from_dict(interaction_data) for interaction_data in data["interactions"]],
-        )
-
-```
-
---- END OF FILE src/primitives.py ---
 
 --- START OF FILE src/textual_view.py ---
 
@@ -1122,36 +1246,53 @@ from typing import TYPE_CHECKING
 from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
-from textual.widgets import Footer, Header, Input, RichLog
+from textual.containers import Container, Horizontal
+from textual.theme import Theme
+from textual.widgets import Button, Footer, Header, Input, Label, ListItem, ListView, RichLog
 
 from agent_registry import DEFAULT_AGENT
 from commands import ExitCommand, SwitchAgentCommand
 from controller import Controller
-from model import Model, Interaction
+from model import Interaction, Model
 
 if TYPE_CHECKING:
     from model import Interaction
 
 logger = logging.getLogger(__name__)
 
+COLORS = {
+    "primary": "#262624",
+    "secondary": "#1F1E1D",
+    "text": "#BFBDB8",
+    "accent": "#D97059",
+    "border": "#BFAF80",
+    "emphasis": "#BFAF80",
+}
+
+CUSTOM_THEME = Theme(
+    "creamy-dark",
+    COLORS["primary"],
+    secondary=COLORS["secondary"],
+    foreground=COLORS["text"],
+    accent=COLORS["accent"],
+    surface=COLORS["secondary"],
+    background=COLORS["primary"],
+    panel=COLORS["secondary"],
+    error=COLORS["accent"],
+    warning=COLORS["accent"],
+    success=COLORS["border"],
+    variables={
+        "border": COLORS["border"],
+        "emphasis": COLORS["emphasis"],
+    }
+)
+
 class AgentDashboardApp(App):
     """The Textual-based user interface for the agent dashboard."""
 
-    CSS = """
-    Screen {
-        background: $surface;
-    }
-    #chat-log {
-        margin: 1 2;
-        border: round $primary;
-        background: $panel;
-        height: 1fr;
-    }
-    Input {
-        dock: bottom;
-        margin: 0 1 1 1;
-    }
-    """
+    CSS_PATH = "dashboard.tcss"
+    TITLE = "Agent Dashboard"
+    SUB_TITLE = "Interface for interacting with sophisticated AI agents."
     BINDINGS = [
         ("ctrl+d", "toggle_dark", "Toggle Dark Mode"),
         ("ctrl+q", "quit", "Quit"),
@@ -1165,50 +1306,91 @@ class AgentDashboardApp(App):
         self.model.register_listener(self.on_model_update)
 
     def compose(self) -> ComposeResult:
+        """Create child widgets for the app."""
         yield Header()
-        yield RichLog(id="chat-log", auto_scroll=True, wrap=True, highlight=True)
-        yield Input(placeholder="Enter your prompt or type /help...")
+        with Container(id="app-grid"):
+            yield ListView(id="session-list")
+            with Container(id="main-content"):
+                yield RichLog(id="chat-history", wrap=True, highlight=False, markup=True)
+                with Horizontal(id="input-bar"):
+                    yield Input(placeholder="How can I help you today?", id="message-input")
+                    yield Button("↑", id="send-button")
         yield Footer()
 
     async def on_mount(self) -> None:
         """Initializes the application and creates the first session."""
+        self.register_theme(CUSTOM_THEME)
+        self.theme = "creamy-dark"
+
         self.log_widget = self.query_one(RichLog)
         self.input_widget = self.query_one(Input)
         self.input_widget.focus()
         
+        # (1)! The model listener will automatically trigger the first UI update.
         await self.model.create_session()
         
         self.title = "Agent Dashboard"
-        await self.on_model_update()
+        # (2)! Removed the direct call to self.on_model_update() to prevent the race condition.
         
         welcome_interaction = Interaction(
             Text.from_markup("🤖 Agent is ready. Say 'Hi' or type a command."),
             metadata={"user-facing": True, "type": "info"}
         )
+        # This will trigger the second, necessary UI update.
         await self.model.add_interaction_to_active_session(welcome_interaction)
 
     async def on_model_update(self) -> None:
         """Schedules UI updates when the model's state changes."""
+        self.call_later(self.update_session_list)
         self.call_later(self.render_log)
         self.call_later(self.update_header)
+
+    def update_session_list(self) -> None:
+        """Renders the list of sessions in the sidebar idempotently."""
+        session_list_view = self.query_one("#session-list", ListView)
+        
+        # (3)! Add a guard to prevent re-rendering if the session list is already correct.
+        current_ids = {item.id for item in session_list_view.children if item.id is not None}
+        model_ids = {session.id for session in self.model.sessions}
+        if current_ids == model_ids:
+            # The view is already in sync, no need to do anything.
+            return
+
+        session_list_view.clear()
+        
+        active_session_id = self.model.active_session_id
+        highlighted_index = 0
+
+        for i, session in enumerate(self.model.sessions):
+            session_label = f"{session.agent_name} ({session.id.split('_')[1]})"
+            list_item = ListItem(Label(session_label), id=session.id)
+            session_list_view.append(list_item)
+            if session.id == active_session_id:
+                highlighted_index = i
+        
+        if session_list_view.children:
+            session_list_view.index = highlighted_index
 
     def render_log(self) -> None:
         """Renders the model's display_history to the chat log."""
         display_history = self.model.display_history
-        if self._last_rendered_interaction_count != len(display_history):
-            self.log_widget.clear()
-            for interaction in display_history:
-                if isinstance(interaction.contents, Text):
-                    self.log_widget.write(interaction.contents)
-                elif isinstance(interaction.contents, list):
-                    for msg in interaction.contents:
-                        role = msg.role.capitalize()
-                        color = "blue" if msg.role == "user" else "magenta"
-                        self.log_widget.write(Text.from_markup(f"[bold {color}]{role}:[/] {msg.last_text()}"))
-                else:
-                    self.log_widget.write(str(interaction.contents))
+        
+        if self._last_rendered_interaction_count == len(display_history) and self.log_widget.children:
+            return
 
-            self._last_rendered_interaction_count = len(display_history)
+        self.log_widget.clear()
+        for interaction in display_history:
+            if isinstance(interaction.contents, Text):
+                self.log_widget.write(interaction.contents)
+            elif isinstance(interaction.contents, list):
+                for msg in interaction.contents:
+                    role = msg.role.capitalize()
+                    color = COLORS['emphasis'] if msg.role == "user" else COLORS['accent']
+                    self.log_widget.write(Text.from_markup(f"[bold {color}]{role}:[/] {msg.last_text()}"))
+            else:
+                self.log_widget.write(str(interaction.contents))
+
+        self._last_rendered_interaction_count = len(display_history)
 
     def update_header(self) -> None:
         """Updates the header with the current agent and thinking status."""
@@ -1220,10 +1402,15 @@ class AgentDashboardApp(App):
         else:
             self.sub_title = f"Active Agent: [bold]{agent_name}[/]"
 
-    @on(Input.Submitted)
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handles user input, delegating to the controller."""
-        user_input = event.value
+    @on(ListView.Selected, "#session-list")
+    def on_session_selected(self, event: ListView.Selected) -> None:
+        """Handle the selection of a new session in the sidebar."""
+        if event.item.id:
+            self.run_worker(self.model.set_active_session(event.item.id))
+
+    def action_send_message(self) -> None:
+        """Called when the user sends a message."""
+        user_input = self.input_widget.value
         if not user_input:
             return
         
@@ -1235,7 +1422,6 @@ class AgentDashboardApp(App):
             except ExitCommand:
                 self.exit()
             except SwitchAgentCommand as e:
-                # A new session is created to provide a clean slate for the new agent.
                 await self.model.create_session(agent_name=e.agent_name)
                 switch_interaction = Interaction(
                     Text.from_markup(f"[bold green]Success:[/bold green] Switched to agent '{e.agent_name}'."),
@@ -1250,404 +1436,189 @@ class AgentDashboardApp(App):
 
         self.run_worker(process_input_with_exception_handling(), exclusive=True)
 
+    @on(Button.Pressed, "#send-button")
+    def on_button_pressed(self) -> None:
+        """Handle send button clicks."""
+        self.action_send_message()
+
+    @on(Input.Submitted, "#message-input")
+    def on_input_submitted(self) -> None:
+        """Handle 'Enter' key press in the input field."""
+        self.action_send_message()
 ```
 
 --- END OF FILE src/textual_view.py ---
 
---- START OF FILE tests/run_tests.py ---
+--- START OF FILE tests/conftest.py ---
 
 ```py
-#!/usr/bin/env python3
-"""
-Simple test runner for the agent-dashboard project.
-Usage:
-    python tests/run_tests.py                    # Run all tests
-    python tests/run_tests.py tests/test_model.py     # Run specific test file
-    python tests/run_tests.py -v                # Run with verbose output
-"""
-
-import sys
-import subprocess
-import os
-
-def run_tests(test_file=None, verbose=False):
-    """Run pytest with the specified options."""
-    # LINTER FIX: The command needs to be run from the project root for paths to work.
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cmd = ["uv", "run", "python", "-m", "pytest"]
-    
-    if verbose:
-        cmd.append("-v")
-    
-    if test_file:
-        cmd.append(os.path.join("tests", test_file))
-    else:
-        # LINTER FIX: Updated the list of test files to match our refactored suite.
-        # Removed test_integration.py and added test_primitives.py and test_agent_selection.py
-        test_files = [
-            "tests/test_primitives.py",
-            "tests/test_model.py",
-            "tests/test_controller.py",
-            "tests/test_agent_selection.py"
-        ]
-        cmd.extend(test_files)
-    
-    try:
-        # Run the command from the project root directory.
-        result = subprocess.run(cmd, check=True, cwd=project_root)
-        print(f"\nAll tests passed!")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"\nTests failed with exit code {e.returncode}")
-        return False
-    except FileNotFoundError:
-        print("❌ uv or pytest not found. Please ensure they are installed and in your PATH.")
-        return False
-
-if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Run tests for agent-dashboard")
-    parser.add_argument("test_file", nargs="?", help="Specific test file to run (e.g., test_model.py)")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
-    
-    args = parser.parse_args()
-    
-    print("Running tests for agent-dashboard...")
-    success = run_tests(args.test_file, args.verbose)
-    
-    sys.exit(0 if success else 1)
-```
-
---- END OF FILE tests/run_tests.py ---
-
---- START OF FILE tests/test_agent_selection.py ---
-
-```py
-# tests/test_agent_selection.py
 import pytest
-from agent_registry import get_agent, list_available_agents, AGENT_REGISTRY, DEFAULT_AGENT
-from mcp_agent.core.fastagent import FastAgent
-
-def test_list_available_agents():
-    """Ensures list_available_agents returns the correct names."""
-    available_agents = list_available_agents()
-    assert set(available_agents) == set(AGENT_REGISTRY.keys())
-    assert len(available_agents) >= 2 # We have at least minimal and coding
-
-def test_get_specific_agent():
-    """Tests successful retrieval of a specific, configured agent."""
-    agent = get_agent("coding")
-    assert agent is not None
-    assert isinstance(agent, FastAgent)
-    
-    agent_name = list(agent.agents.keys())[0]
-    assert agent_name == "coding"
-
-def test_get_default_agent():
-    """Tests retrieval of the default agent and verifies its name."""
-    agent = get_agent() # No name provided
-    assert agent is not None
-    assert isinstance(agent, FastAgent)
-    
-    agent_name = list(agent.agents.keys())[0]
-    assert agent_name == DEFAULT_AGENT
-
-def test_get_nonexistent_agent_raises_keyerror():
-    """Tests that requesting a non-existent agent raises a KeyError."""
-    with pytest.raises(KeyError) as exc_info:
-        get_agent("nonexistent_agent")
-    assert "not found" in str(exc_info.value)
-
-def test_agent_characteristics_are_distinct():
-    """Tests that different agents have distinct properties."""
-    minimal_agent = get_agent("minimal")
-    coding_agent = get_agent("coding")
-
-    # The .agents property holds the configuration provided to the decorator.
-    # Let's access the config dictionaries directly by their known names for clarity.
-    minimal_config = minimal_agent.agents["minimal"]
-    coding_config = coding_agent.agents["coding"]
-
-    # --- FIX: Use dictionary key access for simple values ---
-    assert minimal_config['instruction'] != coding_config['instruction']
-
-    # --- And attribute access for the RequestParams object ---
-    assert minimal_config['request_params'].maxTokens != coding_config['request_params'].maxTokens
-```
-
---- END OF FILE tests/test_agent_selection.py ---
-
---- START OF FILE tests/test_controller.py ---
-
-```py
-# tests/test_controller.py
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-
-from controller import Controller, ExitCommand, SwitchAgentCommand
+import asyncio
+from unittest.mock import MagicMock, AsyncMock
 from model import Model
-from primitives import Interaction
-# LINTER FIX: Added the missing import for the Prompt helper.
+from textual_view import AgentDashboardApp
+
+@pytest.fixture
+def mock_model():
+    """Provides a mock Model object with a spec for type hinting."""
+    # The 'spec' argument makes the mock type-aware for Pylance.
+    return MagicMock(spec=Model)
+
+@pytest.fixture
+def mock_app():
+    """Provides a mock Textual App object with a spec and mocked run_worker."""
+    mock = MagicMock(spec=AgentDashboardApp)
+    # We still need to mock the implementation of run_worker.
+    mock.run_worker = AsyncMock(side_effect=lambda coro, **kwargs: asyncio.create_task(coro))
+    return mock
+```
+
+--- END OF FILE tests/conftest.py ---
+
+--- START OF FILE tests/integration/test_controller.py ---
+
+```py
+import pytest
+import asyncio
+from unittest.mock import patch, AsyncMock, MagicMock
+
+from src.controller import Controller
+from src.primitives import Interaction
 from mcp_agent.core.prompt import Prompt
 from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
+from mcp.types import TextContent
 
 @pytest.fixture
-def mock_model() -> AsyncMock:
-    """Fixture for a mocked Model."""
-    model = AsyncMock(spec=Model)
-    model.get_active_session.return_value = MagicMock()
-    model.user_preferences = {"auto_save_enabled": True}
-    return model
-
-@pytest.fixture
-def mock_app() -> MagicMock:
-    """Fixture for a mocked Textual App."""
-    return MagicMock()
-
-@pytest.fixture
-def controller(mock_model: AsyncMock, mock_app: MagicMock) -> Controller:
-    """Fixture for a Controller instance with mocks."""
+def controller(mock_model, mock_app):
+    """Provides a Controller instance with mocked dependencies."""
     return Controller(mock_model, mock_app)
 
 @pytest.mark.asyncio
-async def test_handle_exit_command(controller: Controller):
-    """Test that the /exit command raises the ExitCommand exception."""
-    with pytest.raises(ExitCommand):
-        await controller.process_user_input("/exit")
-
-@pytest.mark.asyncio
-async def test_handle_switch_command(controller: Controller):
-    """Test that the /switch command raises the SwitchAgentCommand exception."""
-    with patch('commands.list_available_agents', return_value=['minimal', 'coding']):
-        with pytest.raises(SwitchAgentCommand) as exc_info:
-            await controller.process_user_input("/switch coding")
-        assert exc_info.value.agent_name == "coding"
-
-@pytest.mark.asyncio
-async def test_handle_save_command(controller: Controller):
-    """Test that the /save command calls the model's save method."""
-    with patch('commands.save_session', new_callable=AsyncMock) as mock_save:
-        await controller.process_user_input("/save")
-        mock_save.assert_called_once()
-        controller.model.add_interaction_to_active_session.assert_called_once() # type: ignore
-        interaction_arg = controller.model.add_interaction_to_active_session.call_args[0][0] # type: ignore
-        assert "Success" in str(interaction_arg.contents)
-
-@pytest.mark.asyncio
-async def test_handle_prompt_initiates_agent_turn(controller: Controller, mock_app: MagicMock):
-    """Test that a user prompt correctly triggers a background worker."""
-    await controller.process_user_input("Hello agent")
+async def test_handle_prompt_and_agent_turn(controller: Controller, mocker):
+    """
+    Tests the main interaction loop: user prompt -> agent call -> agent response.
+    This test validates the core logic without calling a real LLM.
+    """
+    # 1. Setup: Mock the agent's response
+    mock_agent_response = PromptMessageMultipart(
+        role="assistant",
+        content=[TextContent(type="text", text="This is a mock agent response.")]
+    )
     
-    controller.model.add_interaction_to_active_session.assert_called_once() # type: ignore
-    interaction_arg = controller.model.add_interaction_to_active_session.call_args[0][0] # type: ignore
-    assert interaction_arg.metadata["user-facing"] is True
-    assert interaction_arg.contents[0].last_text() == "Hello agent"
-    
-    controller.model.save_active_session.assert_called_once() # type: ignore
-    mock_app.run_worker.assert_called_once()
-
-@pytest.mark.asyncio
-@patch('controller.get_agent')
-async def test_execute_agent_turn_success(mock_get_agent, controller: Controller):
-    """Test a successful agent turn execution."""
+    # Mock the agent instance and its generate method
     mock_agent_instance = MagicMock()
-    mock_agent_app = AsyncMock()
-    mock_agent = AsyncMock()
-    mock_response = Prompt.assistant("Agent response")
-    mock_agent.generate.return_value = mock_response
-    mock_agent_app.__getitem__.return_value = mock_agent
-    mock_agent_instance.run.return_value.__aenter__.return_value = mock_agent_app
-    mock_get_agent.return_value = mock_agent_instance
-
-    await controller._execute_agent_turn()
-
-    controller.model.set_thinking_status.assert_any_call(True) # type: ignore
-    controller.model.set_thinking_status.assert_any_call(False) # type: ignore
-
-    assert controller.model.add_interaction_to_active_session.call_count == 1 # type: ignore
-    interaction_arg = controller.model.add_interaction_to_active_session.call_args[0][0] # type: ignore
-    assert interaction_arg.metadata["type"] == "agent_response"
-    assert interaction_arg.contents[0].last_text() == "Agent response"
-
-    controller.model.save_active_session.assert_called_once() # type: ignore
-```
-
---- END OF FILE tests/test_controller.py ---
-
---- START OF FILE tests/test_model.py ---
-
-```py
-# tests/test_model.py
-import pytest
-import os
-import tempfile
-from model import Model, load_session, save_session
-from primitives import Interaction, Session
-from mcp_agent.core.prompt import Prompt
-from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
-from rich.text import Text
-
-@pytest.fixture
-def model() -> Model:
-    """Fixture to provide a clean Model instance for each test."""
-    return Model(default_agent_name="minimal")
-
-@pytest.mark.asyncio
-async def test_model_initial_state(model: Model):
-    """Test the initial state of the Model."""
-    assert model.sessions == []
-    assert model.active_session_id is None
-    assert model.is_thinking is False
-
-@pytest.mark.asyncio
-async def test_session_creation_and_management(model: Model):
-    """Test creating, getting, and switching sessions."""
-    session1 = await model.create_session(agent_name="coding")
-    assert len(model.sessions) == 1
-    assert model.active_session_id == session1.id
-    assert model.get_active_session() is session1
-    assert session1.agent_name == "coding"
-
-    session2 = await model.create_session(agent_name="interpreter")
-    assert len(model.sessions) == 2
-    assert model.active_session_id == session2.id
-
-    await model.set_active_session(session1.id)
-    assert model.active_session_id == session1.id
-
-@pytest.mark.asyncio
-async def test_interaction_and_history(model: Model):
-    """Test adding interactions and the different history views."""
-    await model.create_session()
+    mock_agent_instance.generate = AsyncMock(return_value=mock_agent_response)
     
-    user_prompt = Interaction([Prompt.user("Hello")], metadata={"user-facing": True})
-    agent_response = Interaction([Prompt.assistant("Hi")], metadata={"user-facing": True})
-    internal_thought = Interaction(Text("Thinking..."), metadata={"user-facing": False})
-
-    await model.add_interaction_to_active_session(user_prompt)
-    await model.add_interaction_to_active_session(internal_thought)
-    await model.add_interaction_to_active_session(agent_response)
-
-    active_session = model.get_active_session()
-    assert active_session is not None
-    assert len(active_session.interactions) == 3
-
-    display_history = model.display_history
-    assert len(display_history) == 2
-    assert display_history[0] is user_prompt
-    assert display_history[1] is agent_response
-
-    agent_history = model.get_agent_history_for_active_session()
-    assert len(agent_history) == 2
-    assert agent_history[0].role == "user"
-    assert agent_history[1].role == "assistant"
-
-@pytest.mark.asyncio
-async def test_save_and_load_session(model: Model):
-    """Test saving a session to a file and loading it back."""
-    session = await model.create_session()
-    await model.add_interaction_to_active_session(
-        Interaction([Prompt.user("Test message")])
+    # Mock the agent application context manager
+    mock_agent_app = MagicMock()
+    mock_agent_app.__getitem__.return_value = mock_agent_instance
+    
+    mock_agent_context = AsyncMock()
+    mock_agent_context.__aenter__.return_value = mock_agent_app
+    
+    # Mock the get_agent function to return our controlled agent
+    mocker.patch(
+        'src.controller.get_agent', 
+        return_value=MagicMock(run=MagicMock(return_value=mock_agent_context))
     )
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-        temp_filename = f.name
+    # Mock the active session to control its state
+    mock_session = MagicMock()
+    mock_session.agent_name = "minimal"
+    controller.model.get_active_session.return_value = mock_session
+
+    # 2. Action: Process a user prompt
+    user_prompt = "Hello, agent!"
+    await controller.process_user_input(user_prompt)
     
-    try:
-        success = await save_session(session, temp_filename)
-        assert success is True
-        
-        loaded_session = await load_session(temp_filename)
-        assert loaded_session is not None
-        assert loaded_session.id == session.id
-        assert len(loaded_session.interactions) == 1
-        
-        interaction_contents = loaded_session.interactions[0].contents
-        assert isinstance(interaction_contents, list)
-        assert isinstance(interaction_contents[0], PromptMessageMultipart)
-        assert interaction_contents[0].last_text() == "Test message"
-        
-    finally:
-        if os.path.exists(temp_filename):
-            os.unlink(temp_filename)
+    await asyncio.sleep(0.01) # Wait for the background worker task to run
+
+    # 3. Assertions: Verify the controller's behavior
+    controller.model.set_thinking_status.assert_any_call(True)
+    controller.model.set_thinking_status.assert_any_call(False)
+
+    assert controller.model.add_interaction_to_active_session.call_count == 2
+
+    # Verify the user prompt interaction was added correctly
+    user_interaction_call = controller.model.add_interaction_to_active_session.call_args_list[0]
+    user_interaction_arg: Interaction = user_interaction_call.args[0]
+    assert isinstance(user_interaction_arg, Interaction)
+    assert user_interaction_arg.metadata["type"] == "user_prompt"
+    
+    assert isinstance(user_interaction_arg.contents, list)
+    assert isinstance(user_interaction_arg.contents[0], PromptMessageMultipart)
+    assert user_interaction_arg.contents[0].last_text() == user_prompt
+
+    # Verify the agent response interaction was added correctly
+    agent_interaction_call = controller.model.add_interaction_to_active_session.call_args_list[1]
+    agent_interaction_arg: Interaction = agent_interaction_call.args[0]
+    assert isinstance(agent_interaction_arg, Interaction)
+    assert agent_interaction_arg.metadata["type"] == "agent_response"
+    
+    assert isinstance(agent_interaction_arg.contents, list)
+    assert agent_interaction_arg.contents[0] == mock_agent_response
 ```
 
---- END OF FILE tests/test_model.py ---
+--- END OF FILE tests/integration/test_controller.py ---
 
---- START OF FILE tests/test_primitives.py ---
+--- START OF FILE tests/unit/test_model.py ---
 
 ```py
-# tests/test_primitives.py
 import pytest
-from mcp_agent.core.prompt import Prompt
-from mcp_agent.mcp.prompt_message_multipart import PromptMessageMultipart
-from rich.text import Text
-from primitives import Interaction, Session
+from src.model import Model
+from src.primitives import Interaction
+from src.agent_registry import DEFAULT_AGENT
 
 @pytest.fixture
-def sample_pmp_list() -> list[PromptMessageMultipart]:
-    """Fixture for a sample list of PromptMessageMultipart objects."""
-    # LINTER FIX: Used Prompt.user() and Prompt.assistant() which are the correct
-    # factory methods, instead of the non-existent from_text().
-    return [
-        Prompt.user("Hello"),
-        Prompt.assistant("Hi there!")
-    ]
+def model():
+    """Provides a fresh Model instance for each test."""
+    return Model(default_agent_name=DEFAULT_AGENT)
 
-@pytest.fixture
-def sample_rich_text() -> Text:
-    """Fixture for a sample Rich Text object."""
-    return Text.from_markup("[bold red]System Alert![/]")
+@pytest.mark.asyncio
+async def test_model_initialization(model: Model):
+    """Test that the model initializes correctly without a session."""
+    assert not model.sessions
+    assert model.active_session_id is None
 
-def test_interaction_serialization_pmp(sample_pmp_list):
-    """Test round-trip serialization for an Interaction with PromptMessageMultipart list."""
-    # An interaction's content can be a list of messages representing a full turn.
-    interaction = Interaction(contents=sample_pmp_list, metadata={"source": "agent"})
+@pytest.mark.asyncio
+async def test_create_session(model: Model):
+    """Test session creation and activation."""
+    assert len(model.sessions) == 0
     
-    interaction_dict = interaction.to_dict()
-    assert interaction_dict["metadata"]["_content_type"] == "prompt_message_multipart_list"
+    session = await model.create_session()
     
-    reconstructed_interaction = Interaction.from_dict(interaction_dict)
-    
-    assert isinstance(reconstructed_interaction.contents, list)
-    assert len(reconstructed_interaction.contents) == 2
-    assert all(isinstance(item, PromptMessageMultipart) for item in reconstructed_interaction.contents)
-    assert reconstructed_interaction.contents[0].last_text() == "Hello"
-    assert reconstructed_interaction.metadata["source"] == "agent"
+    assert len(model.sessions) == 1
+    assert model.active_session_id == session.id
+    assert model.get_active_session() is session
+    assert session.agent_name == DEFAULT_AGENT
 
-def test_interaction_serialization_rich_text(sample_rich_text):
-    """Test round-trip serialization for an Interaction with Rich Text."""
-    interaction = Interaction(contents=sample_rich_text, metadata={"type": "system"})
+@pytest.mark.asyncio
+async def test_add_interaction(model: Model):
+    """Test adding an interaction to the active session."""
+    session = await model.create_session()
     
-    interaction_dict = interaction.to_dict()
-    assert interaction_dict["metadata"]["_content_type"] == "rich_text"
-    assert interaction_dict["contents"] == "[bold red]System Alert![/bold red]"
+    interaction = Interaction("Test content")
+    await model.add_interaction_to_active_session(interaction)
     
-    reconstructed_interaction = Interaction.from_dict(interaction_dict)
-    
-    assert isinstance(reconstructed_interaction.contents, Text)
-    assert reconstructed_interaction.contents.markup == "[bold red]System Alert![/bold red]"
-    assert reconstructed_interaction.metadata["type"] == "system"
+    active_session = model.get_active_session()
+    assert active_session
+    assert len(active_session.interactions) == 1
+    assert active_session.interactions[0] == interaction
 
-def test_session_serialization(sample_pmp_list, sample_rich_text):
-    """Test round-trip serialization for a full Session object."""
-    session = Session(agent_name="coding", status="completed")
-    # A single interaction can contain a multi-message turn
-    session.interactions.append(Interaction(contents=sample_pmp_list))
-    session.interactions.append(Interaction(contents=sample_rich_text))
+@pytest.mark.asyncio
+async def test_display_history_filtering(model: Model):
+    """Test that display_history only returns user-facing interactions."""
+    await model.create_session()
     
-    session_dict = session.to_dict()
-    reconstructed_session = Session.from_dict(session_dict)
+    await model.add_interaction_to_active_session(Interaction("User message", metadata={"user-facing": True}))
+    await model.add_interaction_to_active_session(Interaction("System log", metadata={"user-facing": False}))
+    await model.add_interaction_to_active_session(Interaction("Agent response", metadata={"user-facing": True}))
     
-    assert reconstructed_session.id == session.id
-    assert reconstructed_session.agent_name == "coding"
-    assert reconstructed_session.status == "completed"
-    assert len(reconstructed_session.interactions) == 2
-    
-    assert isinstance(reconstructed_session.interactions[0].contents, list)
-    assert isinstance(reconstructed_session.interactions[1].contents, Text)
+    display_history = model.display_history
+    assert len(display_history) == 2
+    assert display_history[0].contents == "User message"
+    assert display_history[1].contents == "Agent response"
 ```
 
---- END OF FILE tests/test_primitives.py ---
+--- END OF FILE tests/unit/test_model.py ---
 
