@@ -1,0 +1,126 @@
+{
+  "id": "session_20250813_123500",
+  "created_at": "2025-08-13T12:35:00.851840",
+  "agent_name": "minimal-agent",
+  "status": "active",
+  "interactions": [
+    {
+      "id": "14071f4f-6a9c-4374-b6e1-83c665a47c14",
+      "timestamp": "2025-08-13T12:35:00.852007",
+      "contents": "🤖 Agent is ready. Say 'Hi' or type a command.",
+      "metadata": {
+        "user-facing": true,
+        "type": "info",
+        "_content_type": "rich_text"
+      }
+    },
+    {
+      "id": "c9669717-aceb-4e02-9883-5a205637636b",
+      "timestamp": "2025-08-13T12:35:24.617733",
+      "contents": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Hey there, take a look at what files you have access to in the 'G' drive and let me know if you see the 'agent context' folder",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "user_prompt",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    },
+    {
+      "id": "e9e57160-120f-4eb5-bbc4-74d28a94a0c9",
+      "timestamp": "2025-08-13T12:35:39.145635",
+      "contents": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Error: Access denied - path outside allowed directories: G:\\ not in G:\\My Drive\\AI Resources\\Open collection",
+              "annotations": null,
+              "meta": null
+            },
+            {
+              "type": "text",
+              "text": "[DIR] Depreciating\n[FILE] hello.txt\n[DIR] agent_context",
+              "annotations": null,
+              "meta": null
+            },
+            {
+              "type": "text",
+              "text": "Yes, I see the `agent_context` folder in 'G:/My Drive/AI Resources/Open collection'.",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "agent_response",
+        "agent_name": "minimal-agent",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    },
+    {
+      "id": "6b49dbed-d13e-4079-b939-575b4ffedb02",
+      "timestamp": "2025-08-13T12:36:14.367647",
+      "contents": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Give me a 2 sentence summary of the folders in there, please",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "user_prompt",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    },
+    {
+      "id": "5a8f8533-74f8-4a06-830f-bdd68a1bf9e9",
+      "timestamp": "2025-08-13T12:36:27.769094",
+      "contents": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "[FILE] fast_agent_dev_scripts_context.md\n[FILE] mcp_spec_concepts_context.md",
+              "annotations": null,
+              "meta": null
+            },
+            {
+              "type": "text",
+              "text": "The 'agent context' folder contains markdown files related to agent development. Specifically, it holds `fast_agent_dev_scripts_context.md` and `mcp_spec_concepts_context.md`, likely providing context for fast agent development scripts and MCP (Multi-Control Plane) specific concepts.",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "agent_response",
+        "agent_name": "minimal-agent",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    }
+  ]
+}

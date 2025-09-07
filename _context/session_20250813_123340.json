@@ -1,0 +1,126 @@
+{
+  "id": "session_20250813_123340",
+  "created_at": "2025-08-13T12:33:40.428471",
+  "agent_name": "minimal-agent",
+  "status": "active",
+  "interactions": [
+    {
+      "id": "d3e14553-309f-42f1-b6dd-11d81be9ce5a",
+      "timestamp": "2025-08-13T12:33:40.428647",
+      "contents": "🤖 Agent is ready. Say 'Hi' or type a command.",
+      "metadata": {
+        "user-facing": true,
+        "type": "info",
+        "_content_type": "rich_text"
+      }
+    },
+    {
+      "id": "1477aec0-3068-46ff-b64d-6b5f6bf953a0",
+      "timestamp": "2025-08-13T12:33:45.472614",
+      "contents": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Hey there, take a look at what files you have access to and let me know if you see the 'agent context' folder",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "user_prompt",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    },
+    {
+      "id": "f3bd26ab-d84c-4f8c-af31-89ff626de070",
+      "timestamp": "2025-08-13T12:34:01.548990",
+      "contents": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Allowed directories:\nG:\\My Drive\\AI Resources\\Open collection",
+              "annotations": null,
+              "meta": null
+            },
+            {
+              "type": "text",
+              "text": "No matches found",
+              "annotations": null,
+              "meta": null
+            },
+            {
+              "type": "text",
+              "text": "I have checked the allowed directories and I don't see an 'agent context' folder.",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "agent_response",
+        "agent_name": "minimal-agent",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    },
+    {
+      "id": "0a4490e2-7bcd-4ced-8d3c-2c3f219dfdc9",
+      "timestamp": "2025-08-13T12:34:31.267040",
+      "contents": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "in the open collection",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "user_prompt",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    },
+    {
+      "id": "a2d2c2ed-828b-45b0-a780-fccbb85f0970",
+      "timestamp": "2025-08-13T12:34:43.533658",
+      "contents": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "[DIR] Depreciating\n[FILE] hello.txt\n[DIR] agent_context",
+              "annotations": null,
+              "meta": null
+            },
+            {
+              "type": "text",
+              "text": "Yes, I see the `agent_context` folder in 'G:\\My Drive\\AI Resources\\Open collection'.",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "agent_response",
+        "agent_name": "minimal-agent",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    }
+  ]
+}

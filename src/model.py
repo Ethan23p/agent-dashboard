@@ -12,13 +12,12 @@ from rich.text import Text
 
 logger = logging.getLogger(__name__)
 
-# Defines the flexible content for an Interaction, allowing it to hold agent
-# messages, system notifications, or other data structures.
+# Defines the flexible content for an Interaction.
 ContentsType = Union[List[PromptMessageMultipart], Text, str, Dict[str, Any]]
 
 @dataclass
 class Interaction:
-    """Represents a single event or exchange, the atomic unit of a session."""
+    """Represents a single event or exchange; the atomic unit of a session."""
     contents: ContentsType
     metadata: Dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
@@ -29,7 +28,7 @@ class Interaction:
         serialized_contents: Any
         if isinstance(self.contents, list) and all(isinstance(item, PromptMessageMultipart) for item in self.contents):
             serialized_contents = [msg.model_dump(mode='json') for msg in self.contents]
-            # Add a type hint to the metadata for robust deserialization.
+            # Add a type hint for robust deserialization.
             self.metadata['_content_type'] = 'prompt_message_multipart_list'
         elif isinstance(self.contents, Text):
             serialized_contents = self.contents.markup
@@ -68,10 +67,7 @@ class Interaction:
 
 @dataclass
 class Session:
-    """
-    Represents a complete, continuous context of interactions, replacing the
-    previous concepts of 'Task' and 'Conversation'.
-    """
+    """Represents a complete, continuous context of interactions."""
     id: str = field(default_factory=lambda: f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
     created_at: datetime = field(default_factory=datetime.now)
     agent_name: str = "minimal"
@@ -125,10 +121,7 @@ async def load_session(filepath: str) -> Optional[Session]:
         return None
 
 class Model:
-    """
-    Manages the application's state, including all sessions, and notifies
-    listeners of changes.
-    """
+    """Manages the application's state and notifies listeners of changes."""
     def __init__(self, default_agent_name: str):
         self.sessions: List[Session] = []
         self.active_session_id: Optional[str] = None
@@ -142,7 +135,7 @@ class Model:
 
     async def _notify_listeners(self):
         """Notifies listeners of a state change."""
-        # Create tasks to avoid blocking the model while listeners run.
+        # Create tasks to avoid blocking while listeners run.
         for listener in self._listeners:
             asyncio.create_task(listener())
 
@@ -207,10 +200,7 @@ class Model:
 
     @property
     def display_history(self) -> List[Interaction]:
-        """
-        Returns a filtered list of interactions suitable for UI display.
-        This simplifies the view's rendering logic.
-        """
+        """Returns a filtered list of interactions for UI display."""
         active_session = self.get_active_session()
         if not active_session:
             return []

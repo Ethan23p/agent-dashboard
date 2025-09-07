@@ -13,7 +13,7 @@ AGENT_DEFINITIONS = [
         "name": "minimal-agent",
         "description": "A minimal *effective* agent with full capabilities.",
         "instruction": "You are a sophisticated assistant AI with many capabilities.",
-        "servers": ["filesystem", "fetch", "sequential-thinking", "playwright", "desktop-commander", "gitmcp", "github"],
+        "servers": ["filesystem", "fetch", "sequential-thinking", "playwright", "desktop-commander", "gitmcp"], #, "github"
         "max_tokens": 4096,
     },
     {
@@ -58,7 +58,7 @@ def _create_agent_from_definition(definition: dict) -> FastAgent:
         use_history=False
     )
     async def placeholder_func(): pass
-    
+
     return agent_instance
 
 # The registry is built dynamically from the definitions list.
@@ -72,7 +72,7 @@ DEFAULT_AGENT = AGENT_DEFINITIONS[0]["name"] if AGENT_DEFINITIONS else "minimal"
 def get_agent(agent_name: Optional[str] = None):
     """
     Retrieves an agent from the registry by name.
-        
+
     Raises:
         KeyError: If the agent name is not found.
     """
@@ -81,7 +81,7 @@ def get_agent(agent_name: Optional[str] = None):
     if agent_name not in AGENT_REGISTRY:
         available_agents = ", ".join(AGENT_REGISTRY.keys())
         raise KeyError(f"Agent '{agent_name}' not found. Available agents: {available_agents}")
-    
+
     return AGENT_REGISTRY[agent_name]
 
 def list_available_agents():

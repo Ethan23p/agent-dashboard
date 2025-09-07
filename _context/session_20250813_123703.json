@@ -1,0 +1,69 @@
+{
+  "id": "session_20250813_123703",
+  "created_at": "2025-08-13T12:37:03.899644",
+  "agent_name": "minimal-agent",
+  "status": "active",
+  "interactions": [
+    {
+      "id": "bbfd2a69-f458-42c2-8420-ed417e55b953",
+      "timestamp": "2025-08-13T12:37:03.899816",
+      "contents": "🤖 Agent is ready. Say 'Hi' or type a command.",
+      "metadata": {
+        "user-facing": true,
+        "type": "info",
+        "_content_type": "rich_text"
+      }
+    },
+    {
+      "id": "33554570-b721-4c63-891e-71f219d75f0d",
+      "timestamp": "2025-08-13T12:37:35.563082",
+      "contents": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Hey there, take a look at what files you have access to in the 'G' drive and let me know if you see the 'agent context' folder.",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "user_prompt",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    },
+    {
+      "id": "1914dd14-77ed-4ab6-b2d6-5064bfee1d84",
+      "timestamp": "2025-08-13T12:37:49.823862",
+      "contents": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "[DIR] .shortcut-targets-by-id\n[DIR] My Drive\n[DIR] Other computers\n[DIR] $RECYCLE.BIN\n[DIR] .Encrypted",
+              "annotations": null,
+              "meta": null
+            },
+            {
+              "type": "text",
+              "text": "I don't see an 'agent context' folder directly in the G: drive. The directories I see are: '.shortcut-targets-by-id', 'My Drive', 'Other computers', '$RECYCLE.BIN', and '.Encrypted'.\n\nWould you like me to check inside 'My Drive' or any other specific directory?",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "agent_response",
+        "agent_name": "minimal-agent",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    }
+  ]
+}

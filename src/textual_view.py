@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 COLORS = {
     "primary": "#262624",
     "secondary": "#1F1E1D",
-    "text": "#BFBDB8",
-    "accent": "#D97059",
-    "border": "#BFAF80",
-    "emphasis": "#BFAF80",
+    "text": "#C2C0B6",
+    "accent": "#D97757",
+    "border": "#30302E",
+    "emphasis": "#276EB3",
 }
 
 CUSTOM_THEME = Theme(
@@ -83,15 +83,15 @@ class AgentDashboardApp(App):
         self.log_widget = self.query_one(RichLog)
         self.input_widget = self.query_one(Input)
         self.input_widget.focus()
-        
+
         # (1)! The model listener will automatically trigger the first UI update.
         await self.model.create_session()
-        
+
         self.title = "Agent Dashboard"
         # (2)! Removed the direct call to self.on_model_update() to prevent the race condition.
-        
+
         welcome_interaction = Interaction(
-            Text.from_markup("🤖 Agent is ready. Say 'Hi' or type a command."),
+            Text.from_markup("Agent is ready. What are we up to today?"),
             metadata={"user-facing": True, "type": "info"}
         )
         # This will trigger the second, necessary UI update.
@@ -106,7 +106,7 @@ class AgentDashboardApp(App):
     def update_session_list(self) -> None:
         """Renders the list of sessions in the sidebar idempotently."""
         session_list_view = self.query_one("#session-list", ListView)
-        
+
         # (3)! Add a guard to prevent re-rendering if the session list is already correct.
         current_ids = {item.id for item in session_list_view.children if item.id is not None}
         model_ids = {session.id for session in self.model.sessions}
@@ -115,7 +115,7 @@ class AgentDashboardApp(App):
             return
 
         session_list_view.clear()
-        
+
         active_session_id = self.model.active_session_id
         highlighted_index = 0
 
@@ -125,14 +125,14 @@ class AgentDashboardApp(App):
             session_list_view.append(list_item)
             if session.id == active_session_id:
                 highlighted_index = i
-        
+
         if session_list_view.children:
             session_list_view.index = highlighted_index
 
     def render_log(self) -> None:
         """Renders the model's display_history to the chat log."""
         display_history = self.model.display_history
-        
+
         if self._last_rendered_interaction_count == len(display_history) and self.log_widget.children:
             return
 
@@ -154,11 +154,11 @@ class AgentDashboardApp(App):
         """Updates the header with the current agent and thinking status."""
         active_session = self.model.get_active_session()
         agent_name = active_session.agent_name if active_session else "N/A"
-        
+
         if self.model.is_thinking:
-            self.sub_title = f"Agent: [bold]{agent_name}[/] 🤔 Thinking..."
+            self.sub_title = f"Agent: {agent_name} is thinking..."
         else:
-            self.sub_title = f"Active Agent: [bold]{agent_name}[/]"
+            self.sub_title = f"Active Agent: {agent_name}"
 
     @on(ListView.Selected, "#session-list")
     def on_session_selected(self, event: ListView.Selected) -> None:
@@ -171,9 +171,9 @@ class AgentDashboardApp(App):
         user_input = self.input_widget.value
         if not user_input:
             return
-        
+
         self.input_widget.clear()
-        
+
         async def process_input_with_exception_handling():
             try:
                 await self.controller.process_user_input(user_input)
