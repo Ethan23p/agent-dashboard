@@ -2,7 +2,7 @@
 
 A custom-built tool for rapidly experimenting with agentic workflows.
 
-Agent Dashboard provides a powerful, Claude-like terminal interface for the `fast-agent` framework. It's designed as a testbed for developers who want to seamlessly switch between interacting with an agent and modifying its underlying code. Think of it as a highly tweakable, modular, and open version of Claude desktop, built with strong software design principles to make development easy.
+Agent Dashboard provides a powerful terminal interface for the `fast-agent` framework. It's designed as a testbed for developers who want to seamlessly switch between interacting with an agent and modifying its underlying code. Think of it as a highly tweakable, modular, and open version of Claude Desktop, built with strong software design principles to make development easy.
 
 ![Agent Dashboard Screenshot](paperwork/agent_dashboard_ui_20250907.png)
 
