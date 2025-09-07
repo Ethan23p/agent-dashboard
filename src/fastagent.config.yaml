@@ -34,11 +34,6 @@ mcp:
         - "@modelcontextprotocol/server-filesystem"
         - "G:/My Drive/AI Resources/Open collection"
 
-    # Secure filesystem server for read-only access to specific directories
-    secure-filesystem:
-      command: "uv"
-      args: ["run", "secure_filesystem_server.py", "G:/My Drive/AI Resources/Open collection"]
-
     # Memory server for persistent knowledge graph memory
     memory:
       command: "npx"
@@ -52,3 +47,28 @@ mcp:
       args:
         - "-y"
         - "@modelcontextprotocol/server-sequential-thinking"
+    
+    # Playwright server for browser automation
+    playwright:
+      command: "npx"
+      args:
+        - "@playwright/mcp@latest"
+
+    # Desktop Commander for local system control
+    desktop-commander:
+      command: "npx"
+      args:
+        - "-y"
+        - "@wonderwhy-er/desktop-commander"
+
+    # GitMcp for git operations
+    gitmcp:
+      command: "npx"
+      args:
+        - "mcp-remote"
+        - "https://gitmcp.io/{owner}/{repo}"
+
+    # GitHub Copilot
+    github:
+      transport: "http"
+      url: "https://api.githubcopilot.com/mcp/"

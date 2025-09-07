@@ -25,6 +25,11 @@ IGNORE_PATTERNS = [
     "*.lock",               # Ignore lock files (like uv.lock).
     "*.jsonl",              # Ignore jsonl log files.
     "create_context.py",    # Ignore this script itself by name.
+    ".pytest_cache",        # Ignore pytest cache directory.
+    ".pytest_cache/*",      # Ignore all files under pytest_cache.
+    "*.code-workspace",     # Ignore VSCode workspace files.
+    "*.egg-info",           # Ignore egg-info directories/files.
+    "*.egg-info/*",         # Ignore all files under egg-info directories.
 ]
 # --- End Configuration ---
 

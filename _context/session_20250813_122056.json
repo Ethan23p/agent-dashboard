@@ -1,0 +1,40 @@
+{
+  "id": "session_20250813_122056",
+  "created_at": "2025-08-13T12:20:56.107412",
+  "agent_name": "minimal-agent",
+  "status": "active",
+  "interactions": [
+    {
+      "id": "c97f41e6-6051-4870-a3f6-e0db5781ac7c",
+      "timestamp": "2025-08-13T12:20:56.107585",
+      "contents": "🤖 Agent is ready. Say 'Hi' or type a command.",
+      "metadata": {
+        "user-facing": true,
+        "type": "info",
+        "_content_type": "rich_text"
+      }
+    },
+    {
+      "id": "8a818852-181f-488f-bcec-8ebae0633a56",
+      "timestamp": "2025-08-13T12:21:06.993962",
+      "contents": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Hey there, take a look at what files you have access to and let me know if you see the 'agent context' folder",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "user_prompt",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    }
+  ]
+}

@@ -1,19 +1,31 @@
-# main.py
 import asyncio
 import sys
 import argparse
+import logging
+from typing import Optional
 
-from model import Model
 from textual_view import AgentDashboardApp
-from controller import Controller, SwitchAgentCommand
-from agent_registry import get_agent, list_available_agents, DEFAULT_AGENT
+from agent_registry import list_available_agents, DEFAULT_AGENT
+
+def setup_logging():
+    """Initializes logging to a file and stderr for critical errors."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        filename="agent-dashboard.log",
+        filemode="a"
+    )
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(logging.CRITICAL)
+    logging.getLogger().addHandler(console_handler)
+    logging.info("--- Application session started ---")
 
 def print_shutdown_message():
-    """Prints a consistent shutdown message."""
     print("\nClient session ended.")
+    logging.info("--- Application session ended ---")
 
 def parse_arguments():
-    """Parse command line arguments for agent selection."""
+    """Parses command-line arguments."""
     parser = argparse.ArgumentParser(description="Agent Dashboard")
     parser.add_argument(
         "--agent", "-a",
@@ -24,56 +36,19 @@ def parse_arguments():
     return parser.parse_args()
 
 class Application:
-    """
-    Manages the application's lifecycle and state.
-    Handles agent sessions and switching between agents.
-    """
+    """Orchestrates the main application components."""
     def __init__(self, initial_agent_name: str):
-        self.current_agent_name = initial_agent_name
+        self.initial_agent_name = initial_agent_name
 
     async def run(self):
-        """The main application loop that handles agent sessions and switching."""
-        while self.current_agent_name is not None:
-            next_agent = await self._run_single_session(self.current_agent_name)
-            if next_agent:
-                print(f"\nSwitching to {next_agent} agent...")
-                await asyncio.sleep(0.1)
-                self.current_agent_name = next_agent
-            else:
-                self.current_agent_name = None
-
-        await asyncio.sleep(0.1)
-
-    async def _run_single_session(self, agent_name: str) -> str | None:
-        """Run a session with a specific agent using the Textual UI."""
-        try:
-            selected_agent = get_agent(agent_name)
-            print(f"Starting {agent_name} agent...")
-            
-            async with selected_agent.run() as agent_app:
-                model = Model()
-                controller = Controller(model)
-                # Pass the agent_name to the updated link_agent_app method
-                controller.link_agent_app(agent_app, agent_name)
-                
-                tui_app = AgentDashboardApp(model, controller, agent_name=agent_name)
-                switch_to_agent = await tui_app.run_async()
-                return switch_to_agent
-
-        except SwitchAgentCommand as e:
-            return e.agent_name
-        except KeyError as e:
-            print(f"Error: {e}")
-            print(f"Available agents: {', '.join(list_available_agents())}")
-            return None
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
-            return None
+        tui_app = AgentDashboardApp(
+            agent_name=self.initial_agent_name
+        )
+        await tui_app.run_async()
 
 async def main():
-    """
-    The main entry point for the application.
-    """
+    """Application entry point."""
+    setup_logging()
     args = parse_arguments()
     app = Application(initial_agent_name=args.agent)
     await app.run()

@@ -1,0 +1,30 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Analyze this data",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Error: Unknown tool: sequential_thinking",
+        "annotations": null,
+        "meta": null
+      },
+      {
+        "type": "text",
+        "text": "Please provide the data you would like me to analyze. You can paste it directly, or tell me where I can access it (e.g., a file path or a URL).",
+        "annotations": null,
+        "meta": null
+      }
+    ]
+  }
+]

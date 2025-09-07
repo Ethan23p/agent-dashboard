@@ -1,0 +1,75 @@
+{
+  "id": "session_20250813_125932",
+  "created_at": "2025-08-13T12:59:32.493782",
+  "agent_name": "minimal-agent",
+  "status": "active",
+  "interactions": [
+    {
+      "id": "d85c671d-fb2e-4740-8ed8-1d606705b99e",
+      "timestamp": "2025-08-13T12:59:32.493949",
+      "contents": "Agent is ready. Say 'Hi' or type a command.",
+      "metadata": {
+        "user-facing": true,
+        "type": "info",
+        "_content_type": "rich_text"
+      }
+    },
+    {
+      "id": "394af17f-0df8-466a-bcea-750bfb0407de",
+      "timestamp": "2025-08-13T13:00:12.787570",
+      "contents": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Hey there, take a look at the files in my drive and let me know if you see the 'agent context' folder.",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "user_prompt",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    },
+    {
+      "id": "c5842f02-1f2e-4d44-91d4-06361c85f9f0",
+      "timestamp": "2025-08-13T13:00:28.355920",
+      "contents": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Allowed directories:\nG:\\My Drive\\AI Resources\\Open collection",
+              "annotations": null,
+              "meta": null
+            },
+            {
+              "type": "text",
+              "text": "[DIR] Depreciating\n[FILE] hello.txt\n[DIR] agent_context",
+              "annotations": null,
+              "meta": null
+            },
+            {
+              "type": "text",
+              "text": "Yes, I see the 'agent context' folder. It's located at `G:\\My Drive\\AI Resources\\Open collection\\agent_context`.",
+              "annotations": null,
+              "meta": null
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "user-facing": true,
+        "type": "agent_response",
+        "agent_name": "minimal-agent",
+        "_content_type": "prompt_message_multipart_list"
+      }
+    }
+  ]
+}
